@@ -132,7 +132,6 @@ namespace SFSControl
                 { "id", GameManager.main.rockets != null ? GameManager.main.rockets.IndexOf(rocket) : -1 },
                 { "height", location?.Height ?? 0 },
                 { "position", rocket.rb2d != null ? new { x = rocket.rb2d.position.x, y = rocket.rb2d.position.y } : null },
-                { "velocity", rocket.rb2d != null ? new { x = rocket.rb2d.velocity.x, y = rocket.rb2d.velocity.y } : null },
                 { "angularVelocity", rocket.rb2d?.angularVelocity ?? 0 },
                 { "rotation", rocket.rb2d?.rotation ?? 0 },
                 { "staging", stagingInfo },

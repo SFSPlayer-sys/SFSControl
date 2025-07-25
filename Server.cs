@@ -342,10 +342,8 @@ namespace SFSControl
                                     result = Control.TimewarpMinus();
                                     break;
                                 case "Wait":
-                                    bool isEncounter = false;
-                                    if (controlReq.args.Length > 0 && controlReq.args[0] != null)
-                                        isEncounter = Convert.ToBoolean(controlReq.args[0]);
-                                    result = Control.WaitForWindow(isEncounter ? "encounter" : "transfer");
+                                    string mode = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : "transfer";
+                                    result = Control.WaitForWindow(mode);
                                     break;
                                 case "CallMethod":
                                     string typeName = controlReq.type ?? (controlReq.args.Length > 0 ? controlReq.args[0]?.ToString() : null);
@@ -394,8 +392,17 @@ namespace SFSControl
                                 case "CompleteChallenge":
                                     result = Control.CompleteChallenge(controlReq.args[0]?.ToString());
                                     break;
-                                case "SetFocus":
-                                    result = Control.SetFocus(controlReq.args[0]?.ToString());
+                                case "Track":
+                                    result = Control.Track(controlReq.args[0]?.ToString());
+                                    break;
+                                case "SwitchMapView":
+                                    bool? on = null;
+                                    if (controlReq.args.Length > 0 && controlReq.args[0] != null)
+                                        on = Convert.ToBoolean(controlReq.args[0]);
+                                    result = Control.SwitchMapView(on);
+                                    break;
+                                case "Unfocus":
+                                    result = Control.Unfocus();
                                     break;
                                 default:
                                     result = "Error: Unknown method";

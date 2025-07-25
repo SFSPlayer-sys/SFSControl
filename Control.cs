@@ -153,14 +153,13 @@ namespace SFSControl
             if (direction == "left" && delta < 0) delta += 360f;
             if (direction == "right" && delta > 0) delta -= 360f;
 
-            // 非常接近目标角度，直接设置
-            if (Mathf.Abs(delta) < 1f)
-                {
-                    rocket.rb2d.rotation = targetAngle;
+            if (Mathf.Abs(delta) < 1f && Mathf.Abs(rocket.rb2d.angularVelocity) < 0.5f)
+            {
+                rocket.rb2d.rotation = targetAngle;
                 rocket.arrowkeys.turnAxis.Value = 0f;
                 rocket.rb2d.angularVelocity = 0f;
                 return "Success";
-                }
+            }
 
             // 控制转向
             float torque = (float)typeof(Rocket).GetMethod("GetTorque", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(rocket, null);
@@ -993,8 +992,25 @@ namespace SFSControl
         }
 
         // 设置地图焦点（支持火箭名/编号或星球codename/编号）
-        public static string SetFocus(string nameOrIndex)
+        public static string Track(string nameOrIndex)
         {
+            // 如果未指定，默认聚焦当前控制的火箭
+            if (string.IsNullOrEmpty(nameOrIndex))
+            {
+                var rocket = PlayerController.main?.player?.Value as Rocket;
+                if (rocket != null && rocket.mapPlayer != null)
+                {
+                    var mapView = UnityEngine.Object.FindObjectOfType(Type.GetType("SFS.World.Maps.MapView, Assembly-CSharp"));
+                    if (mapView != null)
+                    {
+                        var method = mapView.GetType().GetMethod("ToggleFocus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                        method.Invoke(mapView, new object[] { rocket.mapPlayer, 0.8f });
+                        return "Success";
+                    }
+                    return "Error: MapView not available";
+                }
+                return "Error: No controlled rocket";
+            }
             // 查找星球
             var planet = Base.planetLoader?.planets?.Values.FirstOrDefault(
                 p => p != null && (
@@ -1036,6 +1052,39 @@ namespace SFSControl
                 return "Error: MapView not available";
             }
             return "Error: Target not found";
+        }
+
+        // 取消地图焦点
+        public static string Unfocus()
+        {
+            var mapView = UnityEngine.Object.FindObjectOfType(Type.GetType("SFS.World.Maps.MapView, Assembly-CSharp"));
+            if (mapView == null)
+                return "Error: MapView not available";
+            var viewField = mapView.GetType().GetField("view");
+            var view = viewField.GetValue(mapView);
+            var targetProp = view.GetType().GetField("target");
+            var target = targetProp.GetValue(view);
+            var valueProp = target.GetType().GetProperty("Value");
+            valueProp.SetValue(target, null);
+            return "Success";
+        }
+
+        // 切换地图/世界视图，on为false切到世界，true切到地图，null为切换
+        public static string SwitchMapView(bool? on = null)
+        {
+            var mapManagerType = Type.GetType("SFS.World.Maps.MapManager, Assembly-CSharp");
+            var mapManager = UnityEngine.Object.FindObjectOfType(mapManagerType);
+            if (mapManager == null)
+                return "Error: MapManager not available";
+            var mapModeField = mapManagerType.GetField("mapMode");
+            var mapMode = mapModeField.GetValue(mapManager);
+            var valueProp = mapMode.GetType().GetProperty("Value");
+            bool current = (bool)valueProp.GetValue(mapMode);
+            if (on == null)
+                valueProp.SetValue(mapMode, !current);
+            else
+                valueProp.SetValue(mapMode, on.Value);
+            return "Success";
         }
     }
 }

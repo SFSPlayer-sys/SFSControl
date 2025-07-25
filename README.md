@@ -64,7 +64,9 @@ All control APIs use `POST /control` with a JSON body:
 | SetOrbit          | radius, eccentricity, trueAnomaly, counterclockwise, planetCode, rocketIdOrName (string/int, optional) | Set orbit                | 7000000, 0, 0, true, "Earth", 0   |
 | DeleteRocket      | idOrName (string/int)                                   | Delete rocket                | 1                             |
 | CompleteChallenge | challengeId (str)                                       | Complete challenge           | "Liftoff_0"                   |
-| SetFocus          | nameOrIndex (string/int)                                | Set map focus to rocket or planet | "Moon"/0                  |
+| Track             | nameOrIndex (string/int)                                 | Set map focus to rocket or planet | "Moon"/0                  |
+| SwitchMapView     | on (bool, optional)                                      | Switch between map and world view. true=map, false=world, omit to toggle | true/false/空 |
+| Unfocus           | none                                                   | Unfocus map view (clear current focus)   |                               |
 
 ---
 
