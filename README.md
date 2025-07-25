@@ -11,34 +11,23 @@ This project is an automation/remote control/information API server for SFS (Spa
 
 ---
 
-## HTTP API List
+## HTTP GET Information API List
 
-### 1. Rocket & Scene Information
-
-- `GET /rocket_sim?rocketIdOrName=xxx`  
-  Get detailed info of the specified rocket (defaults to the current player rocket if not specified).
-
-- `GET /rockets`  
-  Get a list of all rockets in the scene (save info).
-
-- `GET /planet?codename=xxx`  
-  Get detailed info of the specified planet (defaults to the current player's planet if not specified).
-
-- `GET /planets`  
-  Get detailed info for all planets.
-
-- `GET /other?rocketIdOrName=xxx`  
-  Get miscellaneous info (transfer window ΔV, fuel bars, navigation target, timewarp, scene name, etc).
-
-- `GET /mission`  
-  Get current mission status and mission log.
-
-- `GET /debuglog`  
-  Get the game console log.
+| Path                | Parameters                                                                 | Description                                                      | Example                                                        |
+|---------------------|----------------------------------------------------------------------------|------------------------------------------------------------------|----------------------------------------------------------------|
+| `/rocket_sim`       | `rocketIdOrName` (string/int, optional)                                    | Get detailed info of the specified rocket (default: current)     | `/rocket_sim?rocketIdOrName=1`                                 |
+| `/rockets`          | None                                                                       | Get a list of all rockets in the scene (save info)               | `/rockets`                                                     |
+| `/planet`           | `codename` (string, optional)                                              | Get detailed info of the specified planet (default: current)     | `/planet?codename=Moon`                                        |
+| `/planets`          | None                                                                       | Get detailed info for all planets                                | `/planets`                                                     |
+| `/other`            | `rocketIdOrName` (string/int, optional)                                    | Get miscellaneous info (window ΔV, fuel bars, nav target, etc.)  | `/other?rocketIdOrName=1`                                      |
+| `/rocket`           | `rocketIdOrName` (string/int, optional)                                    | Get the save info of a specific rocket (default: current)        | `/rocket?rocketIdOrName=1`                                     |
+| `/debuglog`         | None                                                                       | Get the game console log                                         | `/debuglog`                                                    |
+| `/mission`          | None                                                                       | Get current mission status and mission log                       | `/mission`                                                     |
+| `/planet_terrain`   | `planetCode` (string, required), `start` (double, optional, deg), `end` (double, optional, deg), `count` (int, optional) | Get an array of terrain heights for the specified planet, sampling from `start` to `end` degrees, with `count` samples. | `/planet_terrain?planetCode=Moon&start=0&end=180&count=100`    |
 
 ---
 
-### 2. Control APIs (POST /control)
+## HTTP POST Control API List
 
 All control APIs use `POST /control` with a JSON body:
 ```json
@@ -48,35 +37,54 @@ All control APIs use `POST /control` with a JSON body:
 }
 ```
 
-#### Common API List
-
 | Method            | Parameters (order/type)                                 | Description                  | Example Params                |
 |-------------------|--------------------------------------------------------|------------------------------|-------------------------------|
-| SetThrottle       | size (float), rocketIdOrName (optional)                 | Set throttle                 | 0.5                           |
-| SetRCS            | on (bool), rocketIdOrName (optional)                    | Toggle RCS                   | true                          |
-| Stage             | rocketIdOrName (optional)                               | Activate staging             |                               |
-| Rotate            | isTarget (bool), angle (float), reference (str), direction (str), rocketIdOrName (str) | Rotate/point                 | false, 90, null, "left"       |
-| StopRotate        | rocketIdOrName (optional)                               | Force stop rotation          |                               |
-| UsePart           | partId (int), rocketIdOrName (optional)                 | Use part                     | 0                             |
+| SetThrottle       | size (float), rocketIdOrName (string/int, optional)     | Set throttle                 | 0.5, 0                        |
+| SetRCS            | on (bool), rocketIdOrName (string/int, optional)        | Toggle RCS                   | true, 1                       |
+| Stage             | rocketIdOrName (string/int, optional)                   | Activate staging             | 0                             |
+| Rotate            | isTarget (bool), angle (float), reference (str), direction (str), rocketIdOrName (string/int, optional) | Rotate/point                 | false, 90, null, "left", 0    |
+| StopRotate        | rocketIdOrName (string/int, optional)                   | Force stop rotation          | 1                             |
+| UsePart           | partId (int), rocketIdOrName (string/int, optional)     | Use part                     | 0, 1                          |
 | ClearDebris       | none                                                   | Clear debris                 |                               |
 | Build             | blueprint (str, JSON)                                   | Build rocket                 | "{...}"                       |
-| RcsThrust         | direction (str), seconds (float)                        | RCS thrust                   | "up", 5                       |
+| RcsThrust         | direction (str), seconds (float), rocketIdOrName (string/int, optional) | RCS thrust                   | "up", 5, 0                   |
 | SwitchToBuild     | none                                                   | Switch to build scene        |                               |
 | ClearBlueprint    | none                                                   | Clear blueprint              |                               |
-| SetRotation       | angle (float), rocketIdOrName (optional)                | Set rotation directly        | 90                            |
-| SetState          | x, y, vx, vy, angularVelocity, blueprintJson, rocketIdOrName | Set rocket state           | 0,0,0,0,0,null                |
-| Launch            | none                                                   | Launch rocket (build scene)  |                               |
-| SwitchRocket      | idOrName (str/int)                                      | Switch controlled rocket     | "1"                           |
-| RenameRocket      | idOrName (str/int), newName (str)                       | Rename rocket                | "1", "MyRocket"               |
-| SetTarget         | nameOrIndex (str/int)                                   | Set navigation target        | "Earth"/1                     |
+| SetRotation       | angle (float), rocketIdOrName (string/int, optional)    | Set rotation directly        | 90, 0                         |
+| SetState          | x, y, vx, vy, angularVelocity, blueprintJson, rocketIdOrName (string/int, optional) | Set rocket state           | 0,0,0,0,0,null,0              |
+| Launch            | rocketIdOrName (string/int, optional)                   | Launch rocket (build scene)  | 0                             |
+| SwitchRocket      | idOrName (string/int)                                   | Switch controlled rocket     | 1                             |
+| RenameRocket      | idOrName (string/int), newName (str)                    | Rename rocket                | 1, "MyRocket"                 |
+| SetTarget         | nameOrIndex (string/int)                                | Set navigation target        | "Earth"/1                    |
 | ClearTarget       | none                                                   | Clear navigation target      |                               |
 | TimewarpPlus      | none                                                   | Increase timewarp            |                               |
 | TimewarpMinus     | none                                                   | Decrease timewarp            |                               |
-| Wait              | isEncounter (bool, optional)                            | Wait for transfer/encounter window | true/false             |
-| SetMainEngineOn   | on (bool), rocketIdOrName (optional)                    | Main engine on/off           | true                           |
-| SetOrbit          | radius, eccentricity, trueAnomaly, counterclockwise, planetCode | Set orbit                | 7000000, 0, 0, true, "Earth"   |
-| DeleteRocket      | idOrName (str/int)                                      | Delete rocket                | "1"                           |
+| Wait              | mode (string: transfer/window/encounter, optional)      | Wait for transfer/rendezvous/encounter window | "encounter"/"window"/"transfer" |
+| SetMainEngineOn   | on (bool), rocketIdOrName (string/int, optional)        | Main engine on/off           | true, 0                       |
+| SetOrbit          | radius, eccentricity, trueAnomaly, counterclockwise, planetCode, rocketIdOrName (string/int, optional) | Set orbit                | 7000000, 0, 0, true, "Earth", 0   |
+| DeleteRocket      | idOrName (string/int)                                   | Delete rocket                | 1                             |
 | CompleteChallenge | challengeId (str)                                       | Complete challenge           | "Liftoff_0"                   |
+| SetFocus          | nameOrIndex (string/int)                                | Set map focus to rocket or planet | "Moon"/0                  |
+
+---
+
+### Additional/Undocumented HTTP APIs
+
+| Path/Method         | Description                                                                 | Parameters/Body Example                                                                                 |
+|---------------------|-----------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| **GET /rocket**     | Get the save info of a specific rocket. If not specified, returns current.  | Query: `rocketIdOrName` (string or int, optional) <br> Example: `/rocket?rocketIdOrName=1`              |
+| **POST /rcall**     | Reflective call: invoke any public static method. **Use with caution!**     | JSON body:<br> `{ "type": "Full.Type.Name", "methodName": "Method", "callArgs": [arg1, arg2, ...] }`    |
+
+#### Additional POST /control methods (not in original doc)
+
+| Method           | Description (EN)                                                                 | Example args / Notes                                              |
+|------------------|----------------------------------------------------------------------------------|-------------------------------------------------------------------|
+| ShowToast        | Show an in-game toast message (popup notification).                              | `['Hello World!']`                                                |
+| AddStage         | Add a stage to the rocket.                                                       | `[stageIndex (int), partIds (int[])]`                             |
+| RemoveStage      | Remove a stage from the rocket.                                                  | `[stageIndex (int)]`                                              |
+| LogMessage       | Write a message to the in-game log.                                              | `[tag (string), message (string)]`                                |
+| SetCheat         | Enable or disable a cheat option.                                                | `[cheatName (string), enabled (bool)]`                            |
+| Revert           | Revert a previous action (such as undoing a build step).                         | `[actionName (string)]`                                           |
 
 ---
 
