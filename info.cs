@@ -528,6 +528,23 @@ namespace SFSControl
             return result;
         }
 
+        // 获取星球指定经度范围的地形高度数组
+        public static double[] GetTerrainProfile(string planetCode, double startDegree, double endDegree, int sampleCount = 360)
+        {
+            var planet = SFS.Base.planetLoader.planets.Values.FirstOrDefault(
+                p => p.codeName.Equals(planetCode, StringComparison.OrdinalIgnoreCase));
+            if (planet == null || sampleCount <= 0) return null;
+            double[] heights = new double[sampleCount];
+            double startRad = startDegree * Math.PI / 180.0;
+            double endRad = endDegree * Math.PI / 180.0;
+            double delta = (endRad - startRad) / (sampleCount - 1);
+            for (int i = 0; i < sampleCount; i++)
+            {
+                double angle = startRad + delta * i;
+                heights[i] = planet.GetTerrainHeightAtAngle(angle);
+            }
+            return heights;
+        }
 
 
         // 获取游戏控制台日志内容

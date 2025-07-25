@@ -239,13 +239,16 @@ namespace SFSControl
                             switch (controlReq.method)
                             {
                                 case "SetThrottle":
-                                    result = Control.SetThrottle(Convert.ToDouble(controlReq.args[0]));
+                                    string rocketIdOrName_throttle = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.SetThrottle(Convert.ToDouble(controlReq.args[0]), rocketIdOrName_throttle);
                                     break;
                                 case "SetRCS":
-                                    result = Control.SetRCS(Convert.ToBoolean(controlReq.args[0]));
+                                    string rocketIdOrName_rcs = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.SetRCS(Convert.ToBoolean(controlReq.args[0]), rocketIdOrName_rcs);
                                     break;
                                 case "Stage":
-                                    result = Control.Stage();
+                                    string rocketIdOrName_stage = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    result = Control.Stage(rocketIdOrName_stage);
                                     break;
                                 case "Rotate":
                                     // 支持多参数，兼容新Rotate接口
@@ -268,7 +271,8 @@ namespace SFSControl
                                     result = Control.Rotate(isTarget, angle, reference, direction, rocketIdOrName);
                                     break;
                                 case "UsePart":
-                                    result = Control.UsePart(Convert.ToInt32(controlReq.args[0]));
+                                    string rocketIdOrName_usepart = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.UsePart(Convert.ToInt32(controlReq.args[0]), rocketIdOrName_usepart);
                                     break;
                                 case "ClearDebris":
                                     result = Control.ClearDebris();
@@ -277,7 +281,8 @@ namespace SFSControl
                                     result = Control.Build(controlReq.args[0].ToString());
                                     break;
                                 case "RcsThrust":
-                                    result = Control.RcsThrust(controlReq.args[0].ToString(), Convert.ToSingle(controlReq.args[1]));
+                                    string rocketIdOrName_rcsthrust = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
+                                    result = Control.RcsThrust(controlReq.args[0].ToString(), Convert.ToSingle(controlReq.args[1]), rocketIdOrName_rcsthrust);
                                     break;
                                 case "SwitchToBuild":
                                     result = Control.SwitchToBuild();
@@ -286,7 +291,8 @@ namespace SFSControl
                                     result = Control.ClearBlueprint();
                                     break;
                                 case "SetRotation":
-                                    result = Control.SetRotation(Convert.ToSingle(controlReq.args[0]));
+                                    string rocketIdOrName_setrot = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.SetRotation(Convert.ToSingle(controlReq.args[0]), rocketIdOrName_setrot);
                                     break;
                                 case "SetState":
                                     double? x = controlReq.args.Length > 0 && controlReq.args[0] != null ? (double?)Convert.ToDouble(controlReq.args[0]) : null;
@@ -302,16 +308,20 @@ namespace SFSControl
                                     result = Control.ShowToast(controlReq.args[0].ToString());
                                     break;
                                 case "StopRotate":
-                                    result = Control.StopRotate();
+                                    string rocketIdOrName_stoprotate = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    result = Control.StopRotate(rocketIdOrName_stoprotate);
                                     break;
                                 case "AddStage":
-                                    result = Control.AddStage(Convert.ToInt32(controlReq.args[0]), JsonConvert.DeserializeObject<int[]>(controlReq.args[1].ToString()));
+                                    string rocketIdOrName_addstage = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
+                                    result = Control.AddStage(Convert.ToInt32(controlReq.args[0]), JsonConvert.DeserializeObject<int[]>(controlReq.args[1].ToString()), rocketIdOrName_addstage);
                                     break;
                                 case "RemoveStage":
-                                    result = Control.RemoveStage(Convert.ToInt32(controlReq.args[0]));
+                                    string rocketIdOrName_removestage = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.RemoveStage(Convert.ToInt32(controlReq.args[0]), rocketIdOrName_removestage);
                                     break;
                                 case "Launch":
-                                    result = Control.Launch();
+                                    string rocketIdOrName_launch = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    result = Control.Launch(rocketIdOrName_launch);
                                     break;
                                 case "SwitchRocket":
                                     result = Control.SwitchRocket(controlReq.args[0].ToString());
@@ -335,7 +345,7 @@ namespace SFSControl
                                     bool isEncounter = false;
                                     if (controlReq.args.Length > 0 && controlReq.args[0] != null)
                                         isEncounter = Convert.ToBoolean(controlReq.args[0]);
-                                    result = Control.WaitForWindow(isEncounter);
+                                    result = Control.WaitForWindow(isEncounter ? "encounter" : "transfer");
                                     break;
                                 case "CallMethod":
                                     string typeName = controlReq.type ?? (controlReq.args.Length > 0 ? controlReq.args[0]?.ToString() : null);
@@ -362,25 +372,30 @@ namespace SFSControl
                                     result = Control.Revert(controlReq.args[0].ToString());
                                     break;
                                 case "SetMainEngineOn":
-                                    result = Control.SetMainEngineOn(Convert.ToBoolean(controlReq.args[0]));
+                                    string rocketIdOrName_engine = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.SetMainEngineOn(Convert.ToBoolean(controlReq.args[0]), rocketIdOrName_engine);
                                     break;
                                 case "SetOrbit":
-                                    // radius, eccentricity, trueAnomaly, counterclockwise, planetCode
                                     double radius = Convert.ToDouble(controlReq.args[0]);
                                     double? eccentricity = controlReq.args.Length > 1 && controlReq.args[1] != null ? (double?)Convert.ToDouble(controlReq.args[1]) : null;
                                     double? trueAnomaly = controlReq.args.Length > 2 && controlReq.args[2] != null ? (double?)Convert.ToDouble(controlReq.args[2]) : null;
                                     bool counterclockwise = controlReq.args.Length > 3 && controlReq.args[3] != null ? Convert.ToBoolean(controlReq.args[3]) : true;
                                     string planetCode = controlReq.args.Length > 4 && controlReq.args[4] != null ? controlReq.args[4].ToString() : null;
-                                    result = Control.SetOrbit(radius, eccentricity, trueAnomaly, counterclockwise, planetCode);
+                                    string rocketIdOrName_orbit = controlReq.args.Length > 5 && controlReq.args[5] != null ? controlReq.args[5].ToString() : null;
+                                    result = Control.SetOrbit(radius, eccentricity, trueAnomaly, counterclockwise, planetCode, rocketIdOrName_orbit);
                                     break;
                                 case "DeleteRocket":
-                                    result = Control.DeleteRocket(controlReq.args[0].ToString());
+                                    string rocketIdOrName_del = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    result = Control.DeleteRocket(rocketIdOrName_del);
                                     break;
                                 case "LogMessage":
                                     result = Control.LogMessage(controlReq.args[0].ToString(), controlReq.args[1].ToString());
                                     break;
                                 case "CompleteChallenge":
                                     result = Control.CompleteChallenge(controlReq.args[0]?.ToString());
+                                    break;
+                                case "SetFocus":
+                                    result = Control.SetFocus(controlReq.args[0]?.ToString());
                                     break;
                                 default:
                                     result = "Error: Unknown method";
@@ -445,6 +460,22 @@ namespace SFSControl
                             modResult = $"Error: {ex.Message}";
                         }
                         responseString = modResult;
+                        break;
+                    case "/planet_terrain":
+                        string terrainPlanetCode = null;
+                        double start = 0, end = 360;
+                        int count = 360;
+                        var terrainQueryDict = ParseQueryString(request.Url.Query);
+                        if (terrainQueryDict.ContainsKey("planetCode"))
+                            terrainPlanetCode = terrainQueryDict["planetCode"];
+                        if (terrainQueryDict.ContainsKey("start"))
+                            double.TryParse(terrainQueryDict["start"], out start);
+                        if (terrainQueryDict.ContainsKey("end"))
+                            double.TryParse(terrainQueryDict["end"], out end);
+                        if (terrainQueryDict.ContainsKey("count"))
+                            int.TryParse(terrainQueryDict["count"], out count);
+                        var terrainArr = Info.GetTerrainProfile(terrainPlanetCode, start, end, count);
+                        responseString = JsonConvert.SerializeObject(terrainArr);
                         break;
                     default:
                         statusCode = 404;

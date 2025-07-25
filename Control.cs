@@ -21,6 +21,15 @@ namespace SFSControl
     // 处理对火箭和游戏的操作。
     public static class Control
     {
+        //归一化角度到-180~180
+        private static float NormalizeAngle(float angle)
+        {
+            angle %= 360f;
+            if (angle > 180f) angle -= 360f;
+            if (angle < -180f) angle += 360f;
+            return angle;
+        }
+
         // 根据编号/名称查找火箭，默认当前控制火箭
         public static Rocket FindRocket(string rocketIdOrName = null)
         {
@@ -53,7 +62,7 @@ namespace SFSControl
         }
 
     // 开关RCS
-    public static string SetRCS(bool on, string rocketIdOrName = null)
+        public static string SetRCS(bool on, string rocketIdOrName = null)
         {
             var rocket = FindRocket(rocketIdOrName);
             if (rocket != null && rocket.arrowkeys != null)
@@ -99,8 +108,8 @@ namespace SFSControl
                 return "Error: Not in world scene or rocket/arrowkeys/rb2d not available";
             rocket.arrowkeys.turnAxis.Value = 0f;      // 停止输入
             rocket.rb2d.angularVelocity = 0f;          // 清零角速度
-            return "Success";
-        }
+                return "Success";
+            }
         // 合并旋转方法
         public static string Rotate(bool isTarget = false, float angle = 0, string reference = null, string direction = null, string rocketIdOrName = null)
         {
@@ -128,32 +137,30 @@ namespace SFSControl
                 }
                 else
                 {
-                    // 默认直接用angle参数
                     targetAngle = angle;
                 }
             }
             else
             {
-                // 普通旋转，直接用angle参数
                 targetAngle = angle;
             }
             // 归一化角度
             targetAngle = NormalizeAngle(targetAngle);
 
             // 方向处理
-            float current = rocket.rb2d.rotation;
-            float delta = Mathf.DeltaAngle(current, targetAngle);
+                float current = rocket.rb2d.rotation;
+                float delta = Mathf.DeltaAngle(current, targetAngle);
             if (direction == "left" && delta < 0) delta += 360f;
             if (direction == "right" && delta > 0) delta -= 360f;
 
             // 非常接近目标角度，直接设置
             if (Mathf.Abs(delta) < 1f)
-            {
-                rocket.rb2d.rotation = targetAngle;
+                {
+                    rocket.rb2d.rotation = targetAngle;
                 rocket.arrowkeys.turnAxis.Value = 0f;
                 rocket.rb2d.angularVelocity = 0f;
                 return "Success";
-            }
+                }
 
             // 控制转向
             float torque = (float)typeof(Rocket).GetMethod("GetTorque", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(rocket, null);
@@ -265,18 +272,13 @@ namespace SFSControl
         }
 
         // RCS推进
-        public static string RcsThrust(string direction, float seconds)
+        public static string RcsThrust(string direction, float seconds, string rocketIdOrName = null)
         {
-            //Debug.Log($"[Control] RcsThrust called, direction={direction}, seconds={seconds}");
-            if (PlayerController.main?.player?.Value != null)
+            var rocket = FindRocket(rocketIdOrName);
+            if (rocket != null && rocket.arrowkeys != null)
             {
-                if (PlayerController.main.player.Value is Rocket rocket && rocket.arrowkeys != null)
-                {
-                    ControlCoroutineRunner.Instance.StartCoroutine(RcsThrustCoroutine(rocket, direction, seconds));
-                    return "Success";
-                }
-                Debug.LogError("[Control] RcsThrust: Not in world scene or rocket/arrowkeys not available");
-                return "Error: Not in world scene or rocket/arrowkeys not available";
+                ControlCoroutineRunner.Instance.StartCoroutine(RcsThrustCoroutine(rocket, direction, seconds));
+                return "Success";
             }
             Debug.LogError("[Control] RcsThrust: Not in world scene or rocket/arrowkeys not available");
             return "Error: Not in world scene or rocket/arrowkeys not available";
@@ -436,9 +438,10 @@ namespace SFSControl
         }
 
         // 发射火箭（仅建造场景）
-        public static string Launch()
+        public static string Launch(string rocketIdOrName = null)
         {
-            //Debug.Log("[Control] Launch called");
+            var rocket = FindRocket(rocketIdOrName);
+            // 这里只能在建造场景发射当前火箭，暂不支持多火箭
             bool isBuildScene = SFS.Builds.BuildState.main != null && SFS.Builds.BuildManager.main != null;
             if (!isBuildScene)
                 return "Error: Not in build scene";
@@ -463,42 +466,12 @@ namespace SFSControl
 
         public static string SwitchRocket(string idOrName)
         {
-            //Debug.Log($"[Control] SwitchRocket called, idOrName={idOrName}");
-            if (GameManager.main?.rockets == null)
-                return "Error: Not in world scene or rocket list not available";
-
-            Rocket target = null;
-
-            // 尝试按编号查找
-            if (int.TryParse(idOrName, out int idx))
-            {
-                if (idx < 0 || idx >= GameManager.main.rockets.Count)
-                {
-                    Debug.LogError("[Control] SwitchRocket: Invalid rocket index");
-                    return "Error: Invalid rocket index";
-                }
-                target = GameManager.main.rockets[idx];
-            }
-            else
-            {
-                // 按名称查找（忽略大小写）
-                target = GameManager.main.rockets.FirstOrDefault(r => r != null && r.rocketName != null && r.rocketName.Equals(idOrName, System.StringComparison.OrdinalIgnoreCase));
-                if (target == null)
-                {
-                    Debug.LogError("[Control] SwitchRocket: Rocket not found by name");
-                    return "Error: Rocket not found by name";
-                }
-            }
-
-            if (target == null)
-            {
-                Debug.LogError("[Control] SwitchRocket: Target rocket is null");
-                return "Error: Target rocket is null";
-            }
+            var rocket = FindRocket(idOrName);
+            if (rocket == null)
+                return "Error: Rocket not found";
             try
             {
-                // 切换玩家控制的火箭
-                PlayerController.main.player.Value = target;
+                PlayerController.main.player.Value = rocket;
                 return "Success";
             }
             catch (System.Exception ex)
@@ -511,41 +484,12 @@ namespace SFSControl
         // 重命名火箭
         public static string RenameRocket(string idOrName, string newName)
         {
-            //Debug.Log($"[Control] RenameRocket called, idOrName={idOrName}, newName={newName}");
-            if (GameManager.main?.rockets == null)
-                return "Error: Not in world scene or rocket list not available";
-
-            Rocket target = null;
-
-            // 尝试按编号查找
-            if (int.TryParse(idOrName, out int idx))
-            {
-                if (idx < 0 || idx >= GameManager.main.rockets.Count)
-                {
-                    Debug.LogError("[Control] RenameRocket: Invalid rocket index");
-                    return "Error: Invalid rocket index";
-                }
-                target = GameManager.main.rockets[idx];
-            }
-            else
-            {
-                // 按名称查找（忽略大小写）
-                target = GameManager.main.rockets.FirstOrDefault(r => r != null && r.rocketName != null && r.rocketName.Equals(idOrName, System.StringComparison.OrdinalIgnoreCase));
-                if (target == null)
-                {
-                    Debug.LogError("[Control] RenameRocket: Rocket not found by name");
-                    return "Error: Rocket not found by name";
-                }
-            }
-
-            if (target == null)
-            {
-                Debug.LogError("[Control] RenameRocket: Target rocket is null");
-                return "Error: Target rocket is null";
-            }
+            var rocket = FindRocket(idOrName);
+            if (rocket == null)
+                return "Error: Rocket not found";
             try
             {
-                target.rocketName = newName;
+                rocket.rocketName = newName;
                 return "Success";
             }
             catch (System.Exception ex)
@@ -660,42 +604,58 @@ namespace SFSControl
             return "Error: WorldTime not available";
         }
 
-        // 自动等待到转移窗口或交会窗口
-        public static string WaitForWindow(bool isEncounter = false)
+        // 自动等待到转移窗口、交会窗口或遭遇窗口
+        // mode: "transfer"（转移窗口）、"window"（交会窗口）、"encounter"（遭遇窗口）
+        public static string WaitForWindow(string mode = "transfer")
         {
-            var timewarpTo = UnityEngine.Object.FindObjectOfType(typeof(SFS.World.Maps.TimewarpTo));
-            if (timewarpTo != null)
+            var timewarpTo = UnityEngine.Object.FindObjectOfType(Type.GetType("SFS.World.Maps.TimewarpTo, Assembly-CSharp"));
+            if (timewarpTo == null)
+                return "Error: TimewarpTo not available";
+
+            var mapNavType = Type.GetType("SFS.World.Maps.MapNavigation, Assembly-CSharp");
+            var mapNav = UnityEngine.Object.FindObjectOfType(mapNavType);
+            if (mapNav == null)
+                return "Error: MapNavigation not available";
+
+            var windowField = mapNavType.GetField("window");
+            var window = windowField.GetValue(mapNav);
+            var windowType = window.GetType();
+            bool hasFutureWindow = (bool)windowType.GetField("Item1").GetValue(window);
+            bool planetWindow = (bool)windowType.GetField("Item4").GetValue(window);
+
+            // 遭遇窗口判定：hasFutureWindow==true 且 planetWindow==false
+            // 交会窗口判定：hasFutureWindow==true 且 planetWindow==true
+            // 转移窗口判定：hasFutureWindow==true 且 planetWindow==false
+            if (mode == "encounter")
             {
-                try
-                {
-                    if (isEncounter)
-                    {
-                        // 交会窗口
-                        var warpType = timewarpTo.GetType().GetNestedType("Warp_Encounter", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                        var warpInstance = System.Activator.CreateInstance(warpType);
-                        var warpField = timewarpTo.GetType().GetField("warp", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                        warpField.SetValue(timewarpTo, warpInstance);
-                    }
-                    else
-                    {
-                        // 转移窗口
-                        var selectType = timewarpTo.GetType().GetNestedType("Select_TransferWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                        var selectInstance = System.Activator.CreateInstance(selectType);
-                        var selectedField = timewarpTo.GetType().GetField("selected", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                        selectedField.SetValue(timewarpTo, selectInstance);
-                    }
-                    var startTimewarpMethod = timewarpTo.GetType().GetMethod("StartTimewarp", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
-                    startTimewarpMethod.Invoke(timewarpTo, null);
-                    return "Success";
-                }
-                catch (System.Exception ex)
-                {
-                    UnityEngine.Debug.LogError($"[Control] WaitForWindow error: {ex}");
-                    return $"Error: {ex.Message}";
-                }
+                if (!hasFutureWindow || planetWindow)
+                    return "Error: No encounter window available";
             }
-            UnityEngine.Debug.LogError("[Control] WaitForWindow: TimewarpTo not available");
-            return "Error: TimewarpTo not available";
+            else if (mode == "window")
+            {
+                if (!hasFutureWindow || !planetWindow)
+                    return "Error: No rendezvous window available";
+            }
+            else // transfer
+            {
+                if (!hasFutureWindow || planetWindow)
+                    return "Error: No transfer window available";
+            }
+
+            try
+            {
+                var type = timewarpTo.GetType();
+                var selectType = type.GetNestedType("Select_TransferWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                var selectInstance = Activator.CreateInstance(selectType);
+                type.GetField("selected", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public).SetValue(timewarpTo, selectInstance);
+                type.GetMethod("StartTimewarp", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public).Invoke(timewarpTo, null);
+                return "Success";
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError($"[Control] WaitForWindow error: {ex}");
+                return $"Error: {ex.Message}";
+            }
         }
 
         // 控制主发动机开关（总点火开关）
@@ -751,7 +711,7 @@ namespace SFSControl
                 return $"Error: {ex.Message}";
             }
         }
-
+        // 显示Toast
         public static string ShowToast(string toast)
         {
             string msg = toast;
@@ -766,10 +726,11 @@ namespace SFSControl
             }
             return "Error: MsgDrawer not available";
         }
-
-        public static string AddStage(int index, int[] partIds)
+        // 添加分级
+        public static string AddStage(int index, int[] partIds, string rocketIdOrName = null)
         {
-            if (PlayerController.main?.player?.Value is Rocket rocket && rocket.staging != null)
+            var rocket = FindRocket(rocketIdOrName);
+            if (rocket != null && rocket.staging != null)
             {
                 var parts = new List<Part>();
                 foreach (var partId in partIds)
@@ -794,7 +755,7 @@ namespace SFSControl
                     try
                     {
                         rocket.staging.InsertStage(newStage, false, index);
-                    return "Success";
+                        return "Success";
                     }
                     catch (System.Exception ex)
                     {
@@ -809,16 +770,17 @@ namespace SFSControl
             return "Error: Not in world scene or rocket/staging not available";
         }
 
-        public static string RemoveStage(int index)
+        public static string RemoveStage(int index, string rocketIdOrName = null)
         {
-            if (PlayerController.main?.player?.Value is Rocket rocket && rocket.staging != null)
+            var rocket = FindRocket(rocketIdOrName);
+            if (rocket != null && rocket.staging != null)
             {
                 if (index >= 0 && index < rocket.staging.stages.Count)
                 {
                     try
                     {
                         rocket.staging.RemoveStage(rocket.staging.stages[index], false);
-                    return "Success";
+                        return "Success";
                     }
                     catch (System.Exception ex)
                     {
@@ -924,11 +886,11 @@ namespace SFSControl
         //   trueAnomaly —— 真近点角（度，可选，默认0，0=远地点在x正方向）
         //   counterclockwise —— true为逆时针（正），false为顺时针（逆）
         //   planetCode —— 目标星球codeName（可选）
-        public static string SetOrbit(double radius, double? eccentricity = null, double? trueAnomaly = null, bool counterclockwise = true, string planetCode = null)
+        public static string SetOrbit(double radius, double? eccentricity = null, double? trueAnomaly = null, bool counterclockwise = true, string planetCode = null, string rocketIdOrName = null)
         {
             try
             {
-                var rocket = PlayerController.main.player.Value as Rocket;
+                var rocket = FindRocket(rocketIdOrName);
                 if (rocket == null) return "Error: Rocket not found";
                 Planet planet = null;
                 if (string.IsNullOrEmpty(planetCode))
@@ -994,34 +956,14 @@ namespace SFSControl
         // 删除指定火箭，未指定时默认删除当前玩家控制的火箭
         public static string DeleteRocket(string idOrName = null)
         {
-            if (GameManager.main?.rockets == null)
-                return "Error: Not in world scene or rocket list not available";
-
-            Rocket target = null;
-            if (string.IsNullOrEmpty(idOrName))
-            {
-                target = PlayerController.main?.player?.Value as Rocket;
-            }
-            else if (int.TryParse(idOrName, out int idx))
-            {
-                if (idx < 0 || idx >= GameManager.main.rockets.Count)
-                    return "Error: Invalid rocket index";
-                target = GameManager.main.rockets[idx];
-            }
-            else
-            {
-                target = GameManager.main.rockets.FirstOrDefault(r => r != null && r.rocketName != null && r.rocketName.Equals(idOrName, StringComparison.OrdinalIgnoreCase));
-                if (target == null)
-                    return "Error: Rocket not found by name";
-            }
-
-            if (target == null)
+            var rocket = FindRocket(idOrName);
+            if (rocket == null)
                 return "Error: Target rocket is null";
-            if (target == PlayerController.main?.player?.Value)
+            if (rocket == PlayerController.main?.player?.Value)
                 return "Error: Cannot delete the rocket currently controlled by player";
             try
             {
-                SFS.World.RocketManager.DestroyRocket(target, SFS.World.DestructionReason.Intentional);
+                SFS.World.RocketManager.DestroyRocket(rocket, SFS.World.DestructionReason.Intentional);
                 return "Success";
             }
             catch (Exception ex)
@@ -1050,13 +992,50 @@ namespace SFSControl
             }
         }
 
-        // 工具方法：归一化角度到-180~180
-        private static float NormalizeAngle(float angle)
+        // 设置地图焦点（支持火箭名/编号或星球codename/编号）
+        public static string SetFocus(string nameOrIndex)
         {
-            angle %= 360f;
-            if (angle > 180f) angle -= 360f;
-            if (angle < -180f) angle += 360f;
-            return angle;
+            // 查找星球
+            var planet = Base.planetLoader?.planets?.Values.FirstOrDefault(
+                p => p != null && (
+                    p.codeName.Equals(nameOrIndex, StringComparison.OrdinalIgnoreCase) ||
+                    (p.DisplayName != null && p.DisplayName.ToString().Equals(nameOrIndex, StringComparison.OrdinalIgnoreCase))
+                )
+            );
+            if (planet != null && planet.mapPlanet != null)
+            {
+                var mapView = UnityEngine.Object.FindObjectOfType(Type.GetType("SFS.World.Maps.MapView, Assembly-CSharp"));
+                if (mapView != null)
+                {
+                    var method = mapView.GetType().GetMethod("ToggleFocus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                    method.Invoke(mapView, new object[] { planet.mapPlanet, 0.8f });
+                    return "Success";
+                }
+                return "Error: MapView not available";
+            }
+            // 查找火箭
+            Rocket targetRocket = null;
+            if (int.TryParse(nameOrIndex, out int idx))
+            {
+                if (GameManager.main?.rockets != null && idx >= 0 && idx < GameManager.main.rockets.Count)
+                    targetRocket = GameManager.main.rockets[idx];
+            }
+            else if (GameManager.main?.rockets != null)
+            {
+                targetRocket = GameManager.main.rockets.FirstOrDefault(r => r != null && r.rocketName != null && r.rocketName.Equals(nameOrIndex, StringComparison.OrdinalIgnoreCase));
+            }
+            if (targetRocket != null && targetRocket.mapPlayer != null)
+            {
+                var mapView = UnityEngine.Object.FindObjectOfType(Type.GetType("SFS.World.Maps.MapView, Assembly-CSharp"));
+                if (mapView != null)
+                {
+                    var method = mapView.GetType().GetMethod("ToggleFocus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+                    method.Invoke(mapView, new object[] { targetRocket.mapPlayer, 0.8f });
+                    return "Success";
+                }
+                return "Error: MapView not available";
+            }
+            return "Error: Target not found";
         }
     }
 }
