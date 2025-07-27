@@ -100,7 +100,8 @@ namespace SFSControl
             Debug.LogError("[Control] Stage: Not in world scene or rocket/staging not available");
             return "Error: Not in world scene or rocket/staging not available";
         }
-        // 强制停止当前旋转
+        
+        // 停止当前旋转
         public static string StopRotate(string rocketIdOrName = null)
         {
             var rocket = FindRocket(rocketIdOrName);
@@ -110,6 +111,7 @@ namespace SFSControl
             rocket.rb2d.angularVelocity = 0f;          // 清零角速度
                 return "Success";
             }
+        
         // 合并旋转方法
         public static string Rotate(bool isTarget = false, float angle = 0, string reference = null, string direction = null, string rocketIdOrName = null)
         {
@@ -124,14 +126,12 @@ namespace SFSControl
                 // 参考系处理
                 if (reference == "surface")
                 {
-                    // 表面方向
                     targetAngle = Mathf.Atan2((float)rocket.location.position.Value.y, (float)rocket.location.position.Value.x) * Mathf.Rad2Deg;
                 }
                 else if (reference == "orbit")
                 {
-                    // 轨道方向
                     var v = rocket.location.velocity.Value;
-                    if (v.magnitude < 0.1)
+                    if (v.magnitude < 0.1)// 速度太低，无法计算轨道方向
                         return "Error: Velocity too low for orbit reference";
                     targetAngle = Mathf.Atan2((float)v.y, (float)v.x) * Mathf.Rad2Deg;
                 }
@@ -144,45 +144,68 @@ namespace SFSControl
             {
                 targetAngle = angle;
             }
-            // 归一化角度
-            targetAngle = NormalizeAngle(targetAngle);
+            // 归一化角度到0~360
+            targetAngle = (targetAngle % 360f + 360f) % 360f;
 
-            // 方向处理
-                float current = rocket.rb2d.rotation;
-                float delta = Mathf.DeltaAngle(current, targetAngle);
-            if (direction == "left" && delta < 0) delta += 360f;
-            if (direction == "right" && delta > 0) delta -= 360f;
-
-            if (Mathf.Abs(delta) < 1f && Mathf.Abs(rocket.rb2d.angularVelocity) < 0.5f)
-            {
-                rocket.rb2d.rotation = targetAngle;
-                rocket.arrowkeys.turnAxis.Value = 0f;
-                rocket.rb2d.angularVelocity = 0f;
-                return "Success";
-            }
-
-            // 控制转向
-            float torque = (float)typeof(Rocket).GetMethod("GetTorque", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(rocket, null);
-            float mass = rocket.rb2d.mass;
-            if (mass > 200f)
-                torque /= Mathf.Pow(mass / 200f, 0.35f);
-            float maxAcc = torque * Mathf.Rad2Deg / mass;
-            float angVel = rocket.rb2d.angularVelocity;
-            float stopTime = Mathf.Abs(angVel / maxAcc);
-            float curTime = Mathf.Abs(delta / (angVel == 0 ? 1e-3f : angVel));
-
-            // 判断是否需要减速
-            float turnInput;
-            if (stopTime > curTime)
-            {
-                turnInput = Mathf.Sign(angVel); // 继续当前方向
-            }
-            else
-            {
-                turnInput = -Mathf.Sign(delta); // 反向减速
-            }
-            rocket.arrowkeys.turnAxis.Value = turnInput * Mathf.Clamp(Mathf.Abs(delta) / 30f, 0.1f, 1.0f);
+            // 启动协程平滑旋转
+            ControlCoroutineRunner.Instance.StartCoroutine(RotateRocketToTargetAngle(rocket, targetAngle, direction));
             return "Success";
+        }
+        // 旋转火箭到目标角度
+        private static IEnumerator RotateRocketToTargetAngle(Rocket rocket, float targetAngle, string direction)
+        {
+            float timeout = 60f; // 超时时间
+            float elapsed = 0f;
+            float error;
+            do
+            {
+                float current = (rocket.rb2d.rotation % 360f + 360f) % 360f;
+                error = Mathf.DeltaAngle(current, targetAngle);
+
+                // 方向处理
+                if (direction == "left" && error < 0) error += 360f;
+                if (direction == "right" && error > 0) error -= 360f;
+
+                // 误差小于1度且角速度很小，锁定角度
+                if (Mathf.Abs(error) < 1f && Mathf.Abs(rocket.rb2d.angularVelocity) < 0.5f)
+                {
+                    rocket.rb2d.rotation = targetAngle;
+                    rocket.arrowkeys.turnAxis.Value = 0f;
+                    rocket.rb2d.angularVelocity = 0f;
+                    yield break;
+                }
+                
+                // 计算可用扭矩和惯性
+                float torque = (float)typeof(Rocket).GetMethod("GetTorque", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(rocket, null);
+                float mass = rocket.rb2d.mass;
+                // 质量大于200吨时，扭矩按质量衰减
+                if (mass > 200f)
+                    torque /= Mathf.Pow(mass / 200f, 0.35f);
+                float maxAcc = torque * Mathf.Rad2Deg / mass;
+                float angVel = rocket.rb2d.angularVelocity;
+                float stopTime = Mathf.Abs(angVel / maxAcc);
+                float curTime = Mathf.Abs(error / (angVel == 0 ? 1e-3f : angVel));
+
+                // 判断是否需要减速
+                float turnInput;
+                if (stopTime > curTime)
+                {
+                    turnInput = Mathf.Sign(angVel); // 继续当前方向
+                }
+                else
+                {
+                    turnInput = -Mathf.Sign(error); // 反向减速
+                }
+                rocket.arrowkeys.turnAxis.Value = turnInput * Mathf.Clamp(Mathf.Abs(error) / 30f, 0.1f, 1.0f);
+
+                yield return new WaitForFixedUpdate();
+                elapsed += Time.fixedDeltaTime;
+            } while (elapsed < timeout);
+
+            // 超时保护
+            rocket.arrowkeys.turnAxis.Value = 0f;
+            rocket.rb2d.angularVelocity = 0f;
+            Debug.Log("Rotation timed out.");
         }
 
         // 使用部件
@@ -307,7 +330,7 @@ namespace SFSControl
             rocket.arrowkeys.horizontalAxis.Value = Double2.zero;
             rocket.arrowkeys.verticalAxis.Value = Double2.zero;
         }
-
+        // 协程管理器
         private class ControlCoroutineRunner : MonoBehaviour
         {
             private static ControlCoroutineRunner _instance;
@@ -462,7 +485,6 @@ namespace SFSControl
 
 
         // 切换控制火箭
-
         public static string SwitchRocket(string idOrName)
         {
             var rocket = FindRocket(idOrName);
@@ -553,58 +575,8 @@ namespace SFSControl
             }
         }
 
-        // 时间加速
-        public static string TimewarpPlus()
-        {
-            //Debug.Log("[Control] TimewarpPlus called");
-            // 只有在世界场景有效
-            if (SFS.World.WorldTime.main != null)
-            {
-                try
-                {
-                    int idx = SFS.World.WorldTime.main.timewarpIndex + 1;
-                    Debug.Log($"[Control] TimewarpPlus: current={SFS.World.WorldTime.main.timewarpIndex}, set={idx}");
-                    SFS.World.WorldTime.main.SetTimewarpIndex_ForLoad(idx);
-                    Debug.Log($"[Control] TimewarpPlus: after set, now={SFS.World.WorldTime.main.timewarpIndex}");
-                    return "Success";
-                }
-                catch (System.Exception ex)
-                {
-                    Debug.LogError($"[Control] TimewarpPlus error: {ex.Message}");
-                    return $"Error: {ex.Message}";
-                }
-            }
-            Debug.LogError("[Control] TimewarpPlus: WorldTime.main is null");
-            return "Error: WorldTime not available";
-        }
-
-        // 时间减速
-        public static string TimewarpMinus()
-        {
-            //Debug.Log("[Control] TimewarpMinus called");
-            // 只有在世界场景有效
-            if (SFS.World.WorldTime.main != null)
-            {
-                try
-                {
-                    int idx = SFS.World.WorldTime.main.timewarpIndex - 1;
-                    Debug.Log($"[Control] TimewarpMinus: current={SFS.World.WorldTime.main.timewarpIndex}, set={idx}");
-                    SFS.World.WorldTime.main.SetTimewarpIndex_ForLoad(idx);
-                    Debug.Log($"[Control] TimewarpMinus: after set, now={SFS.World.WorldTime.main.timewarpIndex}");
-                    return "Success";
-                }
-                catch (System.Exception ex)
-                {
-                    Debug.LogError($"[Control] TimewarpMinus error: {ex.Message}");
-                    return $"Error: {ex.Message}";
-                }
-            }
-            Debug.LogError("[Control] TimewarpMinus: WorldTime.main is null");
-            return "Error: WorldTime not available";
-        }
-
         // 自动等待到转移窗口、交会窗口或遭遇窗口
-        // mode: "transfer"（转移窗口）、"window"（交会窗口）、"encounter"（遭遇窗口）
+        // mode: "transfer"（转移窗口）、"rendezvous"（交会窗口）、"encounter"（遭遇窗口）
         public static string WaitForWindow(string mode = "transfer")
         {
             var timewarpTo = UnityEngine.Object.FindObjectOfType(Type.GetType("SFS.World.Maps.TimewarpTo, Assembly-CSharp"));
@@ -630,7 +602,7 @@ namespace SFSControl
                 if (!hasFutureWindow || planetWindow)
                     return "Error: No encounter window available";
             }
-            else if (mode == "window")
+            else if (mode == "rendezvous")
             {
                 if (!hasFutureWindow || !planetWindow)
                     return "Error: No rendezvous window available";
@@ -710,6 +682,7 @@ namespace SFSControl
                 return $"Error: {ex.Message}";
             }
         }
+        
         // 显示Toast
         public static string ShowToast(string toast)
         {
@@ -725,6 +698,7 @@ namespace SFSControl
             }
             return "Error: MsgDrawer not available";
         }
+        
         // 添加分级
         public static string AddStage(int index, int[] partIds, string rocketIdOrName = null)
         {
@@ -768,7 +742,7 @@ namespace SFSControl
             Debug.LogError("[Control] AddStage: Not in world scene or rocket/staging not available");
             return "Error: Not in world scene or rocket/staging not available";
         }
-
+        // 删除指定序号的分级
         public static string RemoveStage(int index, string rocketIdOrName = null)
         {
             var rocket = FindRocket(rocketIdOrName);
@@ -793,6 +767,7 @@ namespace SFSControl
             Debug.LogError("[Control] RemoveStage: Not in world scene or rocket/staging not available");
             return "Error: Not in world scene or rocket/staging not available";
         }
+        
         // 设置作弊开关
         public static string SetCheat(string cheatName, bool value)
         {
@@ -853,9 +828,16 @@ namespace SFSControl
                     case "3min":
                         FailureMenu.main.Revert_3_Min();
                         return "Success";
+                    case "build":
+                        if (Base.sceneLoader != null)
+                        {
+                            Base.sceneLoader.LoadBuildScene(false);
+                            return "Success";
+                        }
+                        return "Error: Scene loader not available";
                     default:
                         Debug.LogError("[Control] Revert: Unknown revert type");
-                        return "Error: Unknown revert type (use 'launch', '30s', or '3min')";
+                        return "Error: Unknown revert type (use 'launch', '30s', '3min','build' )";
                 }
             }
             catch (Exception ex)
@@ -868,6 +850,7 @@ namespace SFSControl
         // 完成指定挑战
         public static string CompleteChallenge(string challengeId)
         {
+            // 获取日志管理器
             var logManager = SFS.Stats.LogManager.main;
             if (logManager == null)
                 return "Error: LogManager not available";
@@ -878,17 +861,12 @@ namespace SFSControl
             return "Success";
         }
 
-        // 设置当前火箭到以当前星球为中心、指定半径、偏心率、真近点角的椭圆轨道。
-        // 参数：
-        //   radius —— 轨道半径（米）
-        //   eccentricity —— 偏心率（0~1，可选，默认0）
-        //   trueAnomaly —— 真近点角（度，可选，默认0，0=远地点在x正方向）
-        //   counterclockwise —— true为逆时针（正），false为顺时针（逆）
-        //   planetCode —— 目标星球codeName（可选）
+        // 设置当前火箭轨道
         public static string SetOrbit(double radius, double? eccentricity = null, double? trueAnomaly = null, bool counterclockwise = true, string planetCode = null, string rocketIdOrName = null)
         {
             try
             {
+                // 获取火箭
                 var rocket = FindRocket(rocketIdOrName);
                 if (rocket == null) return "Error: Rocket not found";
                 Planet planet = null;
@@ -906,7 +884,7 @@ namespace SFSControl
                     if (planet == null) return $"Error: Planet '{planetCode}' not found";
                 }
                 if (planet == null) return "Error: Planet not found";
-
+                // 偏心率
                 double ecc = eccentricity ?? 0; 
                 if (ecc < 0) ecc = 0;
                 if (ecc >= 1) ecc = 0.99;
@@ -1085,6 +1063,44 @@ namespace SFSControl
             else
                 valueProp.SetValue(mapMode, on.Value);
             return "Success";
+        }
+
+        // 时间加速
+        public static string TimewarpPlus()
+        {
+            if (SFS.World.WorldTime.main != null)
+            {
+                try
+                {
+                    int idx = SFS.World.WorldTime.main.timewarpIndex + 1;
+                    SFS.World.WorldTime.main.SetTimewarpIndex_ForLoad(idx);
+                    return "Success";
+                }
+                catch (System.Exception ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+            }
+            return "Error: WorldTime not available";
+        }
+
+        // 时间减速
+        public static string TimewarpMinus()
+        {
+            if (SFS.World.WorldTime.main != null)
+            {
+                try
+                {
+                    int idx = SFS.World.WorldTime.main.timewarpIndex - 1;
+                    SFS.World.WorldTime.main.SetTimewarpIndex_ForLoad(idx);
+                    return "Success";
+                }
+                catch (System.Exception ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+            }
+            return "Error: WorldTime not available";
         }
     }
 }
