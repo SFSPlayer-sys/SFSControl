@@ -16,7 +16,7 @@ namespace SFSControl
         public override string DisplayName => "SFSControl";
         public override string Author => "SFSGamer"; 
         public override string MinimumGameVersionNecessary => "1.5.10.2";
-        public override string ModVersion => "1.0.5";
+        public override string ModVersion => "1.0.7";
         public override string Description => "Provide an interface for scripts to control SFS externally.";
 
         private Server serverComponent;

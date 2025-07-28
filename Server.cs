@@ -422,13 +422,13 @@ namespace SFSControl
                         string modBody;
                         using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
                             modBody = reader.ReadToEnd();
-                        var modReq = JsonConvert.DeserializeObject<ControlRequest>(modBody);
+                        var rcallReq = JsonConvert.DeserializeObject<RcallRequest>(modBody);
                         string modResult = "Error: Unknown method";
                         try
                         {
-                            string typeName = modReq.type;
-                            string methodName = modReq.methodName;
-                            object[] callArgs = modReq.callArgs ?? new object[0];
+                            string typeName = rcallReq.type;
+                            string methodName = rcallReq.methodName;
+                            object[] callArgs = rcallReq.callArgs ?? new object[0];
                             if (string.IsNullOrEmpty(typeName) || string.IsNullOrEmpty(methodName))
                             {
                                 modResult = "Error: type and methodName required";
@@ -547,5 +547,12 @@ namespace SFSControl
     {
         public string method { get; set; }
         public object[] args { get; set; }
+    }
+
+    public class RcallRequest
+    {
+        public string type { get; set; }
+        public string methodName { get; set; }
+        public object[] callArgs { get; set; }
     }
 }
