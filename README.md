@@ -23,7 +23,8 @@ This project is an automation/remote control/information API server for SFS (Spa
 | `/rocket`           | `rocketIdOrName` (string/int, optional)                                    | Get the save info of a specific rocket (default: current)        | `/rocket?rocketIdOrName=1`                                     |
 | `/debuglog`         | None                                                                       | Get the game console log                                         | `/debuglog`                                                    |
 | `/mission`          | None                                                                       | Get current mission status and mission log                       | `/mission`                                                     |
-| `/planet_terrain`   | `planetCode` (string, required), `start` (double, optional, deg), `end` (double, optional, deg), `count` (int, optional) | Get an array of terrain heights for the specified planet, sampling from `start` to `end` degrees, with `count` samples. | `/planet_terrain?planetCode=Moon&start=0&end=180&count=100`    |
+| `/planet_terrain`   | `planetCode` (string, required), `start` (double, optional, deg), `end` (double, optional, deg), `count` (int, optional) | Get an array of terrain heights for the specified planet, sampling from `start` to `end` degrees, with `count` samples. Use `count=-1` for maximum precision (100 samples per degree). | `/planet_terrain?planetCode=Moon&start=0&end=180&count=100`    |
+| `/rcall`            | None                                                                       | Reflective call: invoke any public static method. **Use with caution!** | POST with JSON body: `{ "type": "Full.Type.Name", "methodName": "Method", "callArgs": [arg1, arg2, ...] }` |
 
 ---
 
@@ -52,14 +53,15 @@ All control APIs use `POST /control` with a JSON body:
 | ClearBlueprint    | none                                                   | Clear blueprint              |                               |
 | SetRotation       | angle (float), rocketIdOrName (string/int, optional)    | Set rotation directly        | 90, 0                         |
 | SetState          | x, y, vx, vy, angularVelocity, blueprintJson, rocketIdOrName (string/int, optional) | Set rocket state           | 0,0,0,0,0,null,0              |
-| Launch            | rocketIdOrName (string/int, optional)                   | Launch rocket (build scene)  | 0                             |
+| Launch            | -                                                    | Launch rocket from build scene | -                           |
 | SwitchRocket      | idOrName (string/int)                                   | Switch controlled rocket     | 1                             |
 | RenameRocket      | idOrName (string/int), newName (str)                    | Rename rocket                | 1, "MyRocket"                 |
 | SetTarget         | nameOrIndex (string/int)                                | Set navigation target        | "Earth"/1                    |
 | ClearTarget       | none                                                   | Clear navigation target      |                               |
 | TimewarpPlus      | none                                                   | Increase timewarp            |                               |
 | TimewarpMinus     | none                                                   | Decrease timewarp            |                               |
-| Wait              | mode (string: transfer/window/encounter, optional)      | Wait for transfer/rendezvous/encounter window | "encounter"/"window"/"transfer" |
+| SetTimewarp       | speed (double), realtimePhysics (bool, optional), showMessage (bool, optional)          | Set timewarp speed directly  | 1000.0, false, true                  |
+| Wait              | mode (string: transfer/rendezvous, optional)      | Wait for transfer/rendezvous window | "rendezvous"/"transfer" |
 | SetMainEngineOn   | on (bool), rocketIdOrName (string/int, optional)        | Main engine on/off           | true, 0                       |
 | SetOrbit          | radius, eccentricity, trueAnomaly, counterclockwise, planetCode, rocketIdOrName (string/int, optional) | Set orbit                | 7000000, 0, 0, true, "Earth", 0   |
 | DeleteRocket      | idOrName (string/int)                                   | Delete rocket                | 1                             |
@@ -67,26 +69,15 @@ All control APIs use `POST /control` with a JSON body:
 | Track             | nameOrIndex (string/int)                                 | Set map focus to rocket or planet | "Moon"/0                  |
 | SwitchMapView     | on (bool, optional)                                      | Switch between map and world view. true=map, false=world, omit to toggle | true/false/空 |
 | Unfocus           | none                                                   | Unfocus map view (clear current focus)   |                               |
-
----
-
-### Additional/Undocumented HTTP APIs
-
-| Path/Method         | Description                                                                 | Parameters/Body Example                                                                                 |
-|---------------------|-----------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
-| **GET /rocket**     | Get the save info of a specific rocket. If not specified, returns current.  | Query: `rocketIdOrName` (string or int, optional) <br> Example: `/rocket?rocketIdOrName=1`              |
-| **POST /rcall**     | Reflective call: invoke any public static method. **Use with caution!**     | JSON body:<br> `{ "type": "Full.Type.Name", "methodName": "Method", "callArgs": [arg1, arg2, ...] }`    |
-
-#### Additional POST /control methods (not in original doc)
-
-| Method           | Description (EN)                                                                 | Example args / Notes                                              |
-|------------------|----------------------------------------------------------------------------------|-------------------------------------------------------------------|
-| ShowToast        | Show an in-game toast message (popup notification).                              | `['Hello World!']`                                                |
-| AddStage         | Add a stage to the rocket.                                                       | `[stageIndex (int), partIds (int[])]`                             |
-| RemoveStage      | Remove a stage from the rocket.                                                  | `[stageIndex (int)]`                                              |
-| LogMessage       | Write a message to the in-game log.                                              | `[tag (string), message (string)]`                                |
-| SetCheat         | Enable or disable a cheat option.                                                | `[cheatName (string), enabled (bool)]`                            |
-| Revert           | Revert a previous action (such as undoing a build step).                         | `[actionName (string)]`                                           |
+| TransferFuel      | fromTankId (int), toTankId (int), rocketIdOrName (string/int, optional) | Transfer fuel between tanks      | 0, 1, 0                       |
+| StopFuelTransfer  | rocketIdOrName (string/int, optional)                   | Stop all fuel transfers         | 0                             |
+| QuicksaveManager  | operation (str, optional), name (str)                    | Manage quicksaves (save/load/delete/rename)  | "save", "MySave"              |
+| ShowToast         | toast (str)                                             | Show in-game toast message   | "Hello World!"                |
+| AddStage          | index (int), partIds (int[]), rocketIdOrName (string/int, optional) | Add stage to rocket      | 1, [0,1,2], 0                 |
+| RemoveStage       | index (int), rocketIdOrName (string/int, optional)      | Remove stage from rocket     | 1, 0                          |
+| LogMessage        | type (str), message (str)                               | Write to game log            | "log", "Debug info"           |
+| SetCheat          | cheatName (str), enabled (bool)                         | Enable/disable cheat         | "infiniteFuel", true          |
+| Revert            | type (str)                                              | Revert action                | "launch"/"30s"/"3min"/"build" |
 
 ---
 
@@ -95,11 +86,21 @@ All control APIs use `POST /control` with a JSON body:
 - **All POST APIs require Content-Type: application/json**.
 - All responses are JSON, containing a `result` field or detailed data.
 - Some parameters are optional; if omitted, the current player rocket is used.
-- `Wait`'s `isEncounter` param: true waits for encounter window, false for transfer window.
+- `Wait`'s mode param: "rendezvous" waits for rendezvous window, "transfer" (default) waits for transfer window.
 - `Rotate` supports multiple references (surface/orbit/custom), direction supports left/right/auto.
 - `SetOrbit` param: counterclockwise true=CCW, false=CW.
 - `/other`'s `fuelBarGroups` field matches the lower-left UI fuel bars.
 - `/other`'s `transferWindowDeltaV` field is the transfer window ΔV, in m/s.
+- `/other`'s `timewarpSpeed` field is the current timewarp speed multiplier (e.g., 1.0 = real-time, 1000.0 = 1000x speed).
+- `QuicksaveManager` operations:
+  - `"save"` (default): Save current game state with given name
+  - `"load"`: Load quicksave with given name
+  - `"delete"`: Delete quicksave with given name
+  - `"rename"`: Rename quicksave, format: `"oldName:newName"`
+- `SetTimewarp` parameters:
+  - `realtimePhysics` (optional): true = real-time physics simulation, false = rail simulation (default: false)
+  - `showMessage` (optional): show in-game message (default: true)
+  - Auto logic: If `realtimePhysics` is not specified (default false), 0-5x speed defaults to real-time, others default to rail simulation
 
 ---
 

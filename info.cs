@@ -156,7 +156,9 @@ namespace SFSControl
             Planet planet = null;
             if (!string.IsNullOrEmpty(codename) && Base.planetLoader?.planets != null)
             {
-                planet = Base.planetLoader.planets.Values.FirstOrDefault(p => p != null && p.codeName == codename);
+                planet = Base.planetLoader.planets.Values.FirstOrDefault(p => p != null && 
+                    (p.codeName.Equals(codename, StringComparison.OrdinalIgnoreCase) || 
+                     (p.DisplayName != null && p.DisplayName.ToString().Equals(codename, StringComparison.OrdinalIgnoreCase))));
             }
             if (planet == null)
             {
@@ -289,10 +291,22 @@ namespace SFSControl
             } catch { targetInfo = null; }
 
             // 获取当前时间加速倍率
-            int? timewarpIndex = null;
+            double? timewarpSpeed = null;
             try {
-                timewarpIndex = SFS.World.WorldTime.main?.timewarpIndex;
-            } catch { timewarpIndex = null; }
+                if (SFS.World.WorldTime.main != null)
+                {
+                    timewarpSpeed = SFS.World.WorldTime.main.timewarpSpeed;
+                }
+            } catch { timewarpSpeed = null; }
+
+            // 获取当前世界时间
+            double? worldTime = null;
+            try {
+                if (SFS.World.WorldTime.main != null)
+                {
+                    worldTime = SFS.World.WorldTime.main.worldTime;
+                }
+            } catch { worldTime = null; }
 
             // 获取当前场景名字
             string sceneName = null;
@@ -375,7 +389,8 @@ namespace SFSControl
                 { "targetAngle", targetAngle },
                 { "quicksaves", quicksaves },
                 { "navTarget", targetInfo },
-                { "timewarpIndex", timewarpIndex }, 
+                { "timewarpSpeed", timewarpSpeed }, 
+                { "worldTime", worldTime },
                 { "sceneName", sceneName },
                 { "transferWindowDeltaV", transferWindowDeltaV },
                 { "missionStatus", missionStatus },
@@ -532,7 +547,19 @@ namespace SFSControl
         {
             var planet = SFS.Base.planetLoader.planets.Values.FirstOrDefault(
                 p => p.codeName.Equals(planetCode, StringComparison.OrdinalIgnoreCase));
-            if (planet == null || sampleCount <= 0) return null;
+            if (planet == null) return null;
+            
+            // 当 count=-1 时，返回最高精度的数据（每度100个采样点）
+            if (sampleCount == -1)
+            {
+                sampleCount = (int)((endDegree - startDegree) * 100);
+                if (sampleCount <= 0) sampleCount = 36000; // 默认360度 * 100 = 36000个点
+            }
+            else if (sampleCount <= 0)
+            {
+                return null;
+            }
+            
             double[] heights = new double[sampleCount];
             double startRad = startDegree * Math.PI / 180.0;
             double endRad = endDegree * Math.PI / 180.0;

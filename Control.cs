@@ -460,9 +460,8 @@ namespace SFSControl
         }
 
         // 发射火箭（仅建造场景）
-        public static string Launch(string rocketIdOrName = null)
+        public static string Launch()
         {
-            var rocket = FindRocket(rocketIdOrName);
             // 这里只能在建造场景发射当前火箭，暂不支持多火箭
             bool isBuildScene = SFS.Builds.BuildState.main != null && SFS.Builds.BuildManager.main != null;
             if (!isBuildScene)
@@ -576,7 +575,7 @@ namespace SFSControl
         }
 
         // 自动等待到转移窗口、交会窗口或遭遇窗口
-        // mode: "transfer"（转移窗口）、"rendezvous"（交会窗口）、"encounter"（遭遇窗口）
+        // mode: "transfer"（转移窗口）、"rendezvous"（交会窗口）
         public static string WaitForWindow(string mode = "transfer")
         {
             var timewarpTo = UnityEngine.Object.FindObjectOfType(Type.GetType("SFS.World.Maps.TimewarpTo, Assembly-CSharp"));
@@ -594,20 +593,14 @@ namespace SFSControl
             bool hasFutureWindow = (bool)windowType.GetField("Item1").GetValue(window);
             bool planetWindow = (bool)windowType.GetField("Item4").GetValue(window);
 
-            // 遭遇窗口判定：hasFutureWindow==true 且 planetWindow==false
             // 交会窗口判定：hasFutureWindow==true 且 planetWindow==true
             // 转移窗口判定：hasFutureWindow==true 且 planetWindow==false
-            if (mode == "encounter")
-            {
-                if (!hasFutureWindow || planetWindow)
-                    return "Error: No encounter window available";
-            }
-            else if (mode == "rendezvous")
+            if (mode == "rendezvous")
             {
                 if (!hasFutureWindow || !planetWindow)
                     return "Error: No rendezvous window available";
             }
-            else // transfer
+            else // transfer (默认)
             {
                 if (!hasFutureWindow || planetWindow)
                     return "Error: No transfer window available";
@@ -618,6 +611,14 @@ namespace SFSControl
                 var type = timewarpTo.GetType();
                 var selectType = type.GetNestedType("Select_TransferWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                 var selectInstance = Activator.CreateInstance(selectType);
+                
+                // 设置 planetWindow 字段来区分转移窗口和交会窗口
+                var planetWindowField = selectType.GetField("planetWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (planetWindowField != null)
+                {
+                    planetWindowField.SetValue(selectInstance, mode == "rendezvous");
+                }
+                
                 type.GetField("selected", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public).SetValue(timewarpTo, selectInstance);
                 type.GetMethod("StartTimewarp", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public).Invoke(timewarpTo, null);
                 return "Success";
@@ -641,48 +642,6 @@ namespace SFSControl
             return "Error: Not in world scene or rocket/throttle not available";
         }
 
-        // 通用反射调用方法
-        public static string CallMethod(string typeName, string methodName, object[] args)
-        {
-            try
-            {
-                // 获取类型
-                var type = Type.GetType(typeName);
-                if (type == null)
-                    return "Error: Type not found";
-                // 获取方法（只取第一个匹配的方法，参数类型需完全匹配）
-                var methods = type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance)
-                    .Where(m => m.Name == methodName && m.GetParameters().Length == (args?.Length ?? 0)).ToArray();
-                if (methods.Length == 0)
-                    return "Error: Method not found or parameter count mismatch";
-                var method = methods[0];
-                object instance = null;
-                if (!method.IsStatic)
-                {
-                    // 尝试查找 MonoBehaviour 实例
-                    instance = UnityEngine.Object.FindObjectOfType(type);
-                    if (instance == null)
-                        return "Error: Instance not found";
-                }
-                // 参数类型转换
-                var paramInfos = method.GetParameters();
-                object[] realArgs = new object[args.Length];
-                for (int i = 0; i < args.Length; i++)
-                {
-                    realArgs[i] = Convert.ChangeType(args[i], paramInfos[i].ParameterType);
-                }
-                var result = method.Invoke(instance, realArgs);
-                // 返回值序列化
-                if (result == null)
-                    return "Success";
-                return Newtonsoft.Json.JsonConvert.SerializeObject(new { result });
-            }
-            catch (Exception ex)
-            {
-                return $"Error: {ex.Message}";
-            }
-        }
-        
         // 显示Toast
         public static string ShowToast(string toast)
         {
@@ -1072,8 +1031,19 @@ namespace SFSControl
             {
                 try
                 {
-                    int idx = SFS.World.WorldTime.main.timewarpIndex + 1;
-                    SFS.World.WorldTime.main.SetTimewarpIndex_ForLoad(idx);
+                    // 获取最大索引
+                    var worldTimeType = typeof(SFS.World.WorldTime);
+                    var maxIndexProperty = worldTimeType.GetProperty("MaxIndex", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    int maxIndex = (int)maxIndexProperty.GetValue(null);
+                    
+                    int currentIndex = SFS.World.WorldTime.main.timewarpIndex;
+                    if (currentIndex >= maxIndex)
+                    {
+                        return "Error: Already at maximum timewarp speed";
+                    }
+                    
+                    int newIndex = currentIndex + 1;
+                    SFS.World.WorldTime.main.SetTimewarpIndex_ForLoad(newIndex);
                     return "Success";
                 }
                 catch (System.Exception ex)
@@ -1091,8 +1061,14 @@ namespace SFSControl
             {
                 try
                 {
-                    int idx = SFS.World.WorldTime.main.timewarpIndex - 1;
-                    SFS.World.WorldTime.main.SetTimewarpIndex_ForLoad(idx);
+                    int currentIndex = SFS.World.WorldTime.main.timewarpIndex;
+                    if (currentIndex <= 0)
+                    {
+                        return "Error: Already at minimum timewarp speed";
+                    }
+                    
+                    int newIndex = currentIndex - 1;
+                    SFS.World.WorldTime.main.SetTimewarpIndex_ForLoad(newIndex);
                     return "Success";
                 }
                 catch (System.Exception ex)
@@ -1101,6 +1077,259 @@ namespace SFSControl
                 }
             }
             return "Error: WorldTime not available";
+        }
+
+        // 设置时间加速倍率
+        public static string SetTimewarp(double speed, bool realtimePhysics = false, bool showMessage = true)
+        {
+            if (SFS.World.WorldTime.main != null)
+            {
+                try
+                {
+                    // 如果realtimePhysics参数为默认值false，则根据速度自动判断
+                    // 0-5倍速默认实时，其余不实时
+                    if (!realtimePhysics)
+                    {
+                        if (speed >= 0 && speed <= 5)
+                        {
+                            realtimePhysics = true;
+                        }
+                        else
+                        {
+                            realtimePhysics = false;
+                        }
+                    }
+                    
+                    // 调用SetState方法设置时间加速
+                    SFS.World.WorldTime.main.SetState(speed, realtimePhysics, showMessage);
+                    
+                    return "Success";
+                }
+                catch (System.Exception ex)
+                {
+                    return $"Error: {ex.Message}";
+                }
+            }
+            return "Error: WorldTime not available";
+        }
+
+        // 燃料转移
+        public static string TransferFuel(int fromTankId, int toTankId, string rocketIdOrName = null)
+        {
+            var rocket = FindRocket(rocketIdOrName);
+            if (rocket == null || rocket.resources == null)
+                return "Error: Rocket or resources not available";
+
+            try
+            {
+                // 获取源油箱和目标油箱
+                Part fromTank = null;
+                Part toTank = null;
+                ResourceModule fromGroup = null;
+                ResourceModule toGroup = null;
+
+                // 查找源油箱
+                if (fromTankId >= 0 && fromTankId < rocket.partHolder.parts.Count)
+                {
+                    fromTank = rocket.partHolder.parts[fromTankId];
+                    if (fromTank != null)
+                    {
+                        var fromModules = fromTank.GetModules<ResourceModule>();
+                        if (fromModules != null && fromModules.Length > 0)
+                        {
+                            fromGroup = fromModules[0].parent;
+                        }
+                    }
+                }
+
+                // 查找目标油箱
+                if (toTankId >= 0 && toTankId < rocket.partHolder.parts.Count)
+                {
+                    toTank = rocket.partHolder.parts[toTankId];
+                    if (toTank != null)
+                    {
+                        var toModules = toTank.GetModules<ResourceModule>();
+                        if (toModules != null && toModules.Length > 0)
+                        {
+                            toGroup = toModules[0].parent;
+                        }
+                    }
+                }
+
+                // 验证油箱和燃料组
+                if (fromTank == null || fromGroup == null)
+                    return "Error: Source tank not found or invalid";
+                if (toTank == null || toGroup == null)
+                    return "Error: Target tank not found or invalid";
+                if (fromGroup == toGroup)
+                    return "Error: Cannot transfer fuel to the same tank";
+                if (fromGroup.resourceType != toGroup.resourceType)
+                    return "Error: Cannot transfer different fuel types";
+
+                // 清除现有的转移
+                rocket.resources.transfers.Clear();
+
+                // 添加新的转移
+                rocket.resources.transfers.Add(new SFS.World.Resources.Transfer(fromTank, fromGroup));
+                rocket.resources.transfers.Add(new SFS.World.Resources.Transfer(toTank, toGroup));
+
+                return "Success";
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] TransferFuel error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        // 停止燃料转移
+        public static string StopFuelTransfer(string rocketIdOrName = null)
+        {
+            var rocket = FindRocket(rocketIdOrName);
+            if (rocket == null || rocket.resources == null)
+                return "Error: Rocket or resources not available";
+
+            try
+            {
+                rocket.resources.transfers.Clear();
+                return "Success";
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] StopFuelTransfer error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        // 快速保存管理
+        public static string QuicksaveManager(string operation = "save", string name = null)
+        {
+            try
+            {
+                if (Base.worldBase?.paths == null)
+                    return "Error: WorldBase or paths not available";
+
+                switch (operation.ToLower())
+                {
+                    case "save":
+                        if (string.IsNullOrEmpty(name))
+                            return "Error: Save name cannot be empty";
+                        
+                        // 创建快速保存
+                        var savePath = Base.worldBase.paths.GetQuicksavePath(name);
+                        if (savePath == null)
+                            return "Error: Could not create quicksave path";
+                        
+                        // 使用反射调用private方法CreateWorldSave
+                        var createWorldSaveMethod = typeof(GameManager).GetMethod("CreateWorldSave", 
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        if (createWorldSaveMethod == null)
+                            return "Error: Could not find CreateWorldSave method";
+                        
+                        var worldSave = createWorldSaveMethod.Invoke(GameManager.main, null) as WorldSave;
+                        if (worldSave == null)
+                            return "Error: Failed to create world save";
+                        
+                        // 保存到快速保存路径
+                        WorldSave.Save(savePath, true, worldSave, Base.worldBase.IsCareer);
+                        return "Success";
+                        
+                    case "load":
+                        if (string.IsNullOrEmpty(name))
+                            return "Error: Load name cannot be empty";
+                        
+                        // 检查快速保存是否存在
+                        var loadPath = Base.worldBase.paths.GetQuicksavePath(name);
+                        if (loadPath == null || !loadPath.FolderExists())
+                            return $"Error: Quicksave '{name}' not found";
+                        
+                        // 加载快速保存
+                        MsgCollector logger = new MsgCollector();
+                        WorldSave worldSaveToLoad;
+                        if (WorldSave.TryLoad(loadPath, true, logger, out worldSaveToLoad))
+                        {
+                            // 使用反射调用private方法ClearWorld
+                            var clearWorldMethod = typeof(GameManager).GetMethod("ClearWorld", 
+                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            if (clearWorldMethod == null)
+                                return "Error: Could not find ClearWorld method";
+                            
+                            clearWorldMethod.Invoke(GameManager.main, null);
+                            
+                            // 加载保存的世界
+                            GameManager.main.LoadSave(worldSaveToLoad, false, logger);
+                            return "Success";
+                        }
+                        else
+                        {
+                            return $"Error: Failed to load quicksave '{name}': {logger.msg}";
+                        }
+                        
+                    case "delete":
+                        if (string.IsNullOrEmpty(name))
+                            return "Error: Delete name cannot be empty";
+                        
+                        // 检查快速保存是否存在
+                        var deletePath = Base.worldBase.paths.GetQuicksavePath(name);
+                        if (deletePath == null || !deletePath.FolderExists())
+                            return $"Error: Quicksave '{name}' not found";
+                        
+                        try
+                        {
+                            // 删除快速保存文件夹
+                            deletePath.DeleteFolder();
+                            return "Success";
+                        }
+                        catch (System.Exception ex)
+                        {
+                            return $"Error: Failed to delete quicksave '{name}': {ex.Message}";
+                        }
+                        
+                    case "rename":
+                        if (string.IsNullOrEmpty(name))
+                            return "Error: Rename parameters cannot be empty";
+                        
+                        // 解析重命名参数：格式为 "oldName:newName"
+                        var renameParts = name.Split(':');
+                        if (renameParts.Length != 2)
+                            return "Error: Rename format should be 'oldName:newName'";
+                        
+                        string oldName = renameParts[0].Trim();
+                        string newName = renameParts[1].Trim();
+                        
+                        if (string.IsNullOrEmpty(oldName) || string.IsNullOrEmpty(newName))
+                            return "Error: Old name and new name cannot be empty";
+                        
+                        // 检查源快速保存是否存在
+                        var oldPath = Base.worldBase.paths.GetQuicksavePath(oldName);
+                        if (oldPath == null || !oldPath.FolderExists())
+                            return $"Error: Source quicksave '{oldName}' not found";
+                        
+                        // 检查目标名称是否已存在
+                        var newPath = Base.worldBase.paths.GetQuicksavePath(newName);
+                        if (newPath != null && newPath.FolderExists())
+                            return $"Error: Target quicksave '{newName}' already exists";
+                        
+                        try
+                        {
+                            // 重命名文件夹
+                            oldPath.Move(newPath);
+                            return "Success";
+                        }
+                        catch (System.Exception ex)
+                        {
+                            return $"Error: Failed to rename quicksave '{oldName}' to '{newName}': {ex.Message}";
+                        }
+                        
+                    default:
+                        return "Error: Invalid operation. Use 'save', 'load', 'delete', or 'rename'";
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] QuicksaveManager error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
         }
     }
 }

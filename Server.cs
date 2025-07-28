@@ -320,8 +320,7 @@ namespace SFSControl
                                     result = Control.RemoveStage(Convert.ToInt32(controlReq.args[0]), rocketIdOrName_removestage);
                                     break;
                                 case "Launch":
-                                    string rocketIdOrName_launch = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
-                                    result = Control.Launch(rocketIdOrName_launch);
+                                    result = Control.Launch();
                                     break;
                                 case "SwitchRocket":
                                     result = Control.SwitchRocket(controlReq.args[0].ToString());
@@ -341,27 +340,15 @@ namespace SFSControl
                                 case "TimewarpMinus":
                                     result = Control.TimewarpMinus();
                                     break;
+                                case "SetTimewarp":
+                                    double speed = Convert.ToDouble(controlReq.args[0]);
+                                    bool realtimePhysics = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToBoolean(controlReq.args[1]) : false;
+                                    bool showMessage = controlReq.args.Length > 2 && controlReq.args[2] != null ? Convert.ToBoolean(controlReq.args[2]) : true;
+                                    result = Control.SetTimewarp(speed, realtimePhysics, showMessage);
+                                    break;
                                 case "Wait":
                                     string mode = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : "transfer";
                                     result = Control.WaitForWindow(mode);
-                                    break;
-                                case "CallMethod":
-                                    string typeName = controlReq.type ?? (controlReq.args.Length > 0 ? controlReq.args[0]?.ToString() : null);
-                                    string methodName = controlReq.methodName ?? (controlReq.args.Length > 1 ? controlReq.args[1]?.ToString() : null);
-                                    object[] callArgs = controlReq.callArgs;
-                                    if (callArgs == null && controlReq.args.Length > 2)
-                                    {
-                                        if (controlReq.args[2] is Newtonsoft.Json.Linq.JArray jarr)
-                                            callArgs = jarr.ToObject<object[]>();
-                                        else if (controlReq.args[2] is System.Collections.IEnumerable enumerable && !(controlReq.args[2] is string))
-                                            callArgs = (enumerable as System.Collections.IEnumerable).Cast<object>().ToArray();
-                                        else if (controlReq.args[2] is object[])
-                                            callArgs = (object[])controlReq.args[2];
-                                    }
-                                    if (typeName == null || methodName == null || callArgs == null)
-                                        result = "Error: type/methodName/callArgs required";
-                                    else
-                                        result = Control.CallMethod(typeName, methodName, callArgs);
                                     break;
                                 case "SetCheat":
                                     result = Control.SetCheat(controlReq.args[0].ToString(), Convert.ToBoolean(controlReq.args[1]));
@@ -403,6 +390,21 @@ namespace SFSControl
                                     break;
                                 case "Unfocus":
                                     result = Control.Unfocus();
+                                    break;
+                                case "TransferFuel":
+                                    int fromTankId = Convert.ToInt32(controlReq.args[0]);
+                                    int toTankId = Convert.ToInt32(controlReq.args[1]);
+                                    string rocketIdOrName_transfer = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
+                                    result = Control.TransferFuel(fromTankId, toTankId, rocketIdOrName_transfer);
+                                    break;
+                                case "StopFuelTransfer":
+                                    string rocketIdOrName_stop = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    result = Control.StopFuelTransfer(rocketIdOrName_stop);
+                                    break;
+                                case "QuicksaveManager":
+                                    string operation = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : "save";
+                                    string quicksaveName = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.QuicksaveManager(operation, quicksaveName);
                                     break;
                                 default:
                                     result = "Error: Unknown method";
@@ -545,8 +547,5 @@ namespace SFSControl
     {
         public string method { get; set; }
         public object[] args { get; set; }
-        public string type { get; set; }
-        public string methodName { get; set; }
-        public object[] callArgs { get; set; }
     }
 }
