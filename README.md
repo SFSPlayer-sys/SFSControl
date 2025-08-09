@@ -88,10 +88,10 @@ All control APIs use `POST /control` with a JSON body:
 - Some parameters are optional; if omitted, the current player rocket is used.
 - `Wait`'s mode param: "rendezvous" waits for rendezvous window, "transfer" (default) waits for transfer window.
 - `Rotate` supports multiple references:
-  - `"surface"`: 相对于行星表面的参考系（指向行星中心）
-  - `"orbit"`: 相对于轨道速度方向的参考系
-  - `null` or other: 默认使用提供的角度值
-  - Direction supports left/right/auto.
+- `"surface"`: A reference frame relative to the planet's surface (pointing toward the planet's center)  
+- `"orbit"`: A reference frame relative to the direction of orbital velocity  
+- `null` or other: The provided angle value is used by default  
+- Direction supports left/right/auto. 
 - `SetOrbit` param: counterclockwise true=CCW, false=CW.
 - `/other`'s `fuelBarGroups` field matches the lower-left UI fuel bars.
 - `/other`'s `transferWindowDeltaV` field is the transfer window ΔV, in m/s.
@@ -130,4 +130,5 @@ curl http://127.0.0.1:27772/other
 ## License & Open Source
 
 - This project is licensed under GPL-3.0, see [LICENSE](LICENSE)
+
 - More info and source: [https://github.com/SFSPlayer-sys/SFSControl](https://github.com/SFSPlayer-sys/SFSControl)
