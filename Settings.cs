@@ -8,12 +8,33 @@ namespace SFSControl
     [Serializable]
     public class ModSettingsConfig
     {
-        public int port = 27772; //端口
+        public int port = 27772; // 端口
+        public bool allowScreenshot = false; // 是否允许截屏（默认关闭）
     }
 
     public static class SettingsManager
     {
-        // 获取Mod文件夹路径
+        public static readonly FilePath Path = new FolderPath("Mods/SFSControl").ExtendToFile("Settings.txt");
+        public static ModSettingsConfig settings;
+
+        public static void Load()
+        {
+            // 重新读取最新的设置文件
+            if (!JsonWrapper.TryLoadJson(Path, out settings))
+            {
+                // 如果文件不存在或读取失败，使用默认设置
+                settings = new ModSettingsConfig();
+                // 只在首次创建时保存默认设置
+                Save();
+            }
+        }
+
+        public static void Save()
+        {
+            Path.WriteText(JsonWrapper.ToJson(settings, true));
+        }
+
+        // 获取Mod文件夹路径（保留原有方法以兼容）
         private static string GetSettingsPath()
         {
             string folder = "Mods/SFSControl";

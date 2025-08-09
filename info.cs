@@ -384,6 +384,31 @@ namespace SFSControl
                     fuelBarGroups = GetFuelBarGroups(rocket);
             } catch { fuelBarGroups = null; }
 
+            // 获取火箭质量（吨）
+            double? mass = null;
+            try {
+                if (rocket?.rb2d != null)
+                    mass = rocket.rb2d.mass;
+            } catch { mass = null; }
+
+            // 获取当前总推力（吨）
+            double? thrust = null;
+            try {
+                if (rocket?.partHolder != null)
+                {
+                    float thrustValue = rocket.partHolder.GetModules<SFS.Parts.Modules.EngineModule>().Sum(a => a.thrust.Value * a.throttle_Out.Value) 
+                                      + rocket.partHolder.GetModules<SFS.Parts.Modules.BoosterModule>().Sum(b => b.thrustVector.Value.magnitude * b.throttle_Out.Value);
+                    thrust = thrustValue;
+                }
+            } catch { thrust = null; }
+
+            // 计算推重比(TWR)
+            double? twr = null;
+            try {
+                if (mass.HasValue && thrust.HasValue && mass.Value > 0)
+                    twr = thrust.Value / mass.Value;
+            } catch { twr = null; }
+
             return new Dictionary<string, object>
             {
                 { "targetAngle", targetAngle },
@@ -394,7 +419,10 @@ namespace SFSControl
                 { "sceneName", sceneName },
                 { "transferWindowDeltaV", transferWindowDeltaV },
                 { "missionStatus", missionStatus },
-                { "fuelBarGroups", fuelBarGroups }
+                { "fuelBarGroups", fuelBarGroups },
+                { "mass", mass },
+                { "thrust", thrust },
+                { "TWR", twr }
             };
         }
 
@@ -582,5 +610,47 @@ namespace SFSControl
                 return new List<string> { "No console log available" };
             return queue.Reverse().Take(maxLines).Reverse().ToList();
         }
+
+        // 获取SFS窗口的截图 - 使用直接纹理方法
+        public static byte[] CaptureSFSWindow()
+        {
+            try
+            {
+                // 确保在主线程中执行
+                if (!UnityEngine.Application.isPlaying)
+                {
+                    UnityEngine.Debug.LogError("[SFSControl] Cannot capture screenshot: Application is not playing");
+                    return null;
+                }
+
+                // 使用ScreenCapture.CaptureScreenshotAsTexture直接获取纹理
+                var screenshot = UnityEngine.ScreenCapture.CaptureScreenshotAsTexture();
+                if (screenshot != null)
+                {
+                    // 使用反射调用EncodeToPNG方法
+                    var encodeMethod = screenshot.GetType().GetMethod("EncodeToPNG");
+                    if (encodeMethod != null)
+                    {
+                        var pngData = (byte[])encodeMethod.Invoke(screenshot, null);
+                        UnityEngine.Object.DestroyImmediate(screenshot);
+                        
+                        if (pngData != null && pngData.Length > 0)
+                        {
+                            return pngData;
+                        }
+                    }
+                    UnityEngine.Object.DestroyImmediate(screenshot);
+                }
+                
+                return null;
+            }
+            catch (System.Exception ex)
+            {
+                UnityEngine.Debug.LogError($"[SFSControl] Screenshot capture failed: {ex.Message}");
+                return null;
+            }
+        }
+
+
     }
 }

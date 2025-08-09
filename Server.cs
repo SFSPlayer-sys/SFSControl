@@ -13,6 +13,8 @@ using Newtonsoft.Json.Serialization;
 using System.Linq;
 using System.Collections.Generic;
 using System.Dynamic;
+using System.Drawing;
+using System.Drawing.Imaging;
 
 
 
@@ -100,6 +102,8 @@ namespace SFSControl
         private Thread listenerThread;
         private bool isRunning = false;
         private readonly ConcurrentQueue<HttpListenerContext> requestQueue = new ConcurrentQueue<HttpListenerContext>();
+        
+
 
         public void StartServer(int port)
         {
@@ -138,12 +142,40 @@ namespace SFSControl
 
         void Update()
         {
+            // 处理HTTP请求队列
             while (requestQueue.TryDequeue(out var context))
             {
                 HandleRequestOnMainThread(context);
             }
         }
         
+
+
+        private void SendErrorResponse(HttpListenerContext context, string errorMessage)
+        {
+            try
+            {
+                if (context?.Response == null)
+                {
+                    UnityEngine.Debug.LogWarning("[SFSControl] Cannot send error response: context or response is null");
+                    return;
+                }
+
+                var response = context.Response;
+                response.StatusCode = 500;
+                response.ContentType = "application/json";
+                string responseString = JsonConvert.SerializeObject(new { error = errorMessage });
+                byte[] buffer = Encoding.UTF8.GetBytes(responseString);
+                response.ContentLength64 = buffer.Length;
+                response.OutputStream.Write(buffer, 0, buffer.Length);
+                response.OutputStream.Close();
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogError($"[SFSControl] Error sending response: {ex.Message}");
+            }
+        }
+
         private void HandleRequestOnMainThread(HttpListenerContext context)
         {
             //Debug.Log("[Server] Handling HTTP request: " + context.Request.Url.AbsolutePath);
@@ -157,6 +189,57 @@ namespace SFSControl
                 //Debug.Log("[Server] Entering switch for: " + context.Request.Url.AbsolutePath);
                 switch (request.Url.AbsolutePath)
                 {
+                    case "/screenshot":
+                        // 检查设置是否已加载
+                        if (SettingsManager.settings == null)
+                        {
+                            SettingsManager.Load();
+                        }
+                        
+                        // 检查是否允许截屏
+                        if (!SettingsManager.settings.allowScreenshot)
+                        {
+                            statusCode = 403;
+                            responseString = JsonConvert.SerializeObject(new { error = "The server has not enabled permission for screen capture." });
+                        }
+                        else
+                        {
+                            try
+                            {
+                                // 获取SFS窗口的截图
+                                byte[] screenshotData = Info.CaptureSFSWindow();
+                                if (screenshotData != null && screenshotData.Length > 0)
+                                {
+                                    // 检查是否是有效的PNG图片
+                                    if (screenshotData.Length > 8 && 
+                                        screenshotData[0] == 0x89 && screenshotData[1] == 0x50 && 
+                                        screenshotData[2] == 0x4E && screenshotData[3] == 0x47)
+                                    {
+                                        response.ContentType = "image/png";
+                                        response.ContentLength64 = screenshotData.Length;
+                                        response.OutputStream.Write(screenshotData, 0, screenshotData.Length);
+                                        response.OutputStream.Close();
+                                        return; // 直接返回，不执行后面的finally块
+                                    }
+                                    else
+                                    {
+                                        statusCode = 500;
+                                        responseString = JsonConvert.SerializeObject(new { error = "Screenshot capture failed: Invalid image data" });
+                                    }
+                                }
+                                else
+                                {
+                                    statusCode = 500;
+                                    responseString = JsonConvert.SerializeObject(new { error = "Screenshot capture failed: Unable to capture screenshot" });
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                statusCode = 500;
+                                responseString = JsonConvert.SerializeObject(new { error = $"Screenshot capture failed: {ex.Message}" });
+                            }
+                        }
+                        break;
                     case "/rocket_sim":
                         string rocketIdOrName2 = null;
                         var rocketQueryDict = ParseQueryString(request.Url.Query);

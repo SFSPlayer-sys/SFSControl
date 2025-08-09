@@ -19,12 +19,12 @@ This project is an automation/remote control/information API server for SFS (Spa
 | `/rockets`          | None                                                                       | Get a list of all rockets in the scene (save info)               | `/rockets`                                                     |
 | `/planet`           | `codename` (string, optional)                                              | Get detailed info of the specified planet (default: current)     | `/planet?codename=Moon`                                        |
 | `/planets`          | None                                                                       | Get detailed info for all planets                                | `/planets`                                                     |
-| `/other`            | `rocketIdOrName` (string/int, optional)                                    | Get miscellaneous info (window ΔV, fuel bars, nav target, etc.)  | `/other?rocketIdOrName=1`                                      |
+| `/other`            | `rocketIdOrName` (string/int, optional)                                    | Get miscellaneous info (window ΔV, fuel bars, nav target, mass, thrust, TWR, etc.)  | `/other?rocketIdOrName=1`                                      |
 | `/rocket`           | `rocketIdOrName` (string/int, optional)                                    | Get the save info of a specific rocket (default: current)        | `/rocket?rocketIdOrName=1`                                     |
 | `/debuglog`         | None                                                                       | Get the game console log                                         | `/debuglog`                                                    |
 | `/mission`          | None                                                                       | Get current mission status and mission log                       | `/mission`                                                     |
 | `/planet_terrain`   | `planetCode` (string, required), `start` (double, optional, deg), `end` (double, optional, deg), `count` (int, optional) | Get an array of terrain heights for the specified planet, sampling from `start` to `end` degrees, with `count` samples. Use `count=-1` for maximum precision (100 samples per degree). | `/planet_terrain?planetCode=Moon&start=0&end=180&count=100`    |
-| `/rcall`            | None                                                                       | Reflective call: invoke any public static method. **Use with caution!** | POST with JSON body: `{ "type": "Full.Type.Name", "methodName": "Method", "callArgs": [arg1, arg2, ...] }` |
+| `/screenshot`       | None                                                                       | Get a screenshot of the SFS game window (PNG format). Requires `allowScreenshot` to be enabled in settings. | `/screenshot`                                                 |
 
 ---
 
@@ -43,7 +43,7 @@ All control APIs use `POST /control` with a JSON body:
 | SetThrottle       | size (float), rocketIdOrName (string/int, optional)     | Set throttle                 | 0.5, 0                        |
 | SetRCS            | on (bool), rocketIdOrName (string/int, optional)        | Toggle RCS                   | true, 1                       |
 | Stage             | rocketIdOrName (string/int, optional)                   | Activate staging             | 0                             |
-| Rotate            | isTarget (bool), angle (float), reference (str), direction (str), rocketIdOrName (string/int, optional) | Rotate/point                 | false, 90, null, "left", 0    |
+| Rotate            | isTarget (bool), angle (float), reference (str), direction (str), rocketIdOrName (string/int, optional) | Rotate/point to target angle | false, 90, null, "left", 0    |
 | StopRotate        | rocketIdOrName (string/int, optional)                   | Force stop rotation          | 1                             |
 | UsePart           | partId (int), rocketIdOrName (string/int, optional)     | Use part                     | 0, 1                          |
 | ClearDebris       | none                                                   | Clear debris                 |                               |
@@ -87,11 +87,18 @@ All control APIs use `POST /control` with a JSON body:
 - All responses are JSON, containing a `result` field or detailed data.
 - Some parameters are optional; if omitted, the current player rocket is used.
 - `Wait`'s mode param: "rendezvous" waits for rendezvous window, "transfer" (default) waits for transfer window.
-- `Rotate` supports multiple references (surface/orbit/custom), direction supports left/right/auto.
+- `Rotate` supports multiple references:
+  - `"surface"`: 相对于行星表面的参考系（指向行星中心）
+  - `"orbit"`: 相对于轨道速度方向的参考系
+  - `null` or other: 默认使用提供的角度值
+  - Direction supports left/right/auto.
 - `SetOrbit` param: counterclockwise true=CCW, false=CW.
 - `/other`'s `fuelBarGroups` field matches the lower-left UI fuel bars.
 - `/other`'s `transferWindowDeltaV` field is the transfer window ΔV, in m/s.
 - `/other`'s `timewarpSpeed` field is the current timewarp speed multiplier (e.g., 1.0 = real-time, 1000.0 = 1000x speed).
+- `/other`'s `mass` field is the total rocket mass, in tons.
+- `/other`'s `thrust` field is the current total thrust, in tons.
+- `/other`'s `TWR` field is the thrust-to-weight ratio.
 - `QuicksaveManager` operations:
   - `"save"` (default): Save current game state with given name
   - `"load"`: Load quicksave with given name

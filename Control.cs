@@ -137,6 +137,7 @@ namespace SFSControl
                 }
                 else
                 {
+                    // 默认情况：直接使用提供的角度
                     targetAngle = angle;
                 }
             }
@@ -641,7 +642,7 @@ namespace SFSControl
             }
             return "Error: Not in world scene or rocket/throttle not available";
         }
-
+        
         // 显示Toast
         public static string ShowToast(string toast)
         {
@@ -1093,7 +1094,7 @@ namespace SFSControl
                         if (speed >= 0 && speed <= 5)
                         {
                             realtimePhysics = true;
-                        }
+                    }
                         else
                         {
                             realtimePhysics = false;

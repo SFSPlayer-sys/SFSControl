@@ -23,12 +23,13 @@ namespace SFSControl
 
         public override void Load()
         {
-            var settings = SettingsManager.LoadSettings();
+            // 加载设置
+            SettingsManager.Load();
 
             var serverObject = new GameObject("SFSControl_Instance");
             GameObject.DontDestroyOnLoad(serverObject);
             serverComponent = serverObject.AddComponent<Server>();
-            serverComponent.StartServer(settings.port);
+            serverComponent.StartServer(SettingsManager.settings.port);
 
             Application.runInBackground = true;
             new Harmony("SFSControl.DeltaVPatch").PatchAll();

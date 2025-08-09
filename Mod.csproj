@@ -29,6 +29,9 @@
     <Reference Include="UnityEngine.UI">
       <HintPath>C:\Users\Administrator\Downloads\SFS\Spaceflight Simulator_Data\Managed\UnityEngine.UI.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>C:\Users\Administrator\Downloads\SFS\Spaceflight Simulator_Data\Managed\UnityEngine.ScreenCaptureModule.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
