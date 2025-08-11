@@ -489,6 +489,12 @@ namespace SFSControl
                                     string quicksaveName = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
                                     result = Control.QuicksaveManager(operation, quicksaveName);
                                     break;
+                                case "WheelControl":
+                                    bool? enable = controlReq.args.Length > 0 && controlReq.args[0] != null ? (bool?)Convert.ToBoolean(controlReq.args[0]) : null;
+                                    float turnAxis = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToSingle(controlReq.args[1]) : 0f;
+                                    string rocketIdOrName_wheel = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
+                                    result = Control.WheelControl(enable, turnAxis, rocketIdOrName_wheel);
+                                    break;
                                 default:
                                     result = "Error: Unknown method";
                                     break;

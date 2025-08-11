@@ -205,7 +205,7 @@ namespace SFSControl
             };
         }
 
-        // 获取其它杂项信息（如当前角度、快速保存、导航目标、时间加速、场景名、转移窗口deltaV等）
+        // 获取其它杂项信息（当前角度、快速保存、导航目标、时间加速、场景名、转移窗口deltaV等）
         public static Dictionary<string, object> GetOtherInfo(string rocketIdOrName = null)
         {
             Rocket rocket = null;
@@ -577,13 +577,7 @@ namespace SFSControl
                 p => p.codeName.Equals(planetCode, StringComparison.OrdinalIgnoreCase));
             if (planet == null) return null;
             
-            // 当 count=-1 时，返回最高精度的数据（每度100个采样点）
-            if (sampleCount == -1)
-            {
-                sampleCount = (int)((endDegree - startDegree) * 100);
-                if (sampleCount <= 0) sampleCount = 36000; // 默认360度 * 100 = 36000个点
-            }
-            else if (sampleCount <= 0)
+            if (sampleCount <= 0)
             {
                 return null;
             }
@@ -611,7 +605,7 @@ namespace SFSControl
             return queue.Reverse().Take(maxLines).Reverse().ToList();
         }
 
-        // 获取SFS窗口的截图 - 使用直接纹理方法
+        // 获取SFS窗口的截图 - 使用SFS自带的ImageTools
         public static byte[] CaptureSFSWindow()
         {
             try
@@ -623,26 +617,51 @@ namespace SFSControl
                     return null;
                 }
 
-                // 使用ScreenCapture.CaptureScreenshotAsTexture直接获取纹理
-                var screenshot = UnityEngine.ScreenCapture.CaptureScreenshotAsTexture();
-                if (screenshot != null)
+                // 获取主相机
+                var camera = UnityEngine.Camera.main;
+                if (camera == null)
                 {
-                    // 使用反射调用EncodeToPNG方法
-                    var encodeMethod = screenshot.GetType().GetMethod("EncodeToPNG");
-                    if (encodeMethod != null)
-                    {
-                        var pngData = (byte[])encodeMethod.Invoke(screenshot, null);
-                        UnityEngine.Object.DestroyImmediate(screenshot);
-                        
-                        if (pngData != null && pngData.Length > 0)
-                        {
-                            return pngData;
-                        }
-                    }
-                    UnityEngine.Object.DestroyImmediate(screenshot);
+                    UnityEngine.Debug.LogError("[SFSControl] No main camera found");
+                    return null;
                 }
+
+                // 创建RenderTexture
+                var renderTexture = new UnityEngine.RenderTexture(Screen.width, Screen.height, 24);
+                var originalTarget = camera.targetTexture;
                 
-                return null;
+                try
+                {
+                    // 设置相机渲染到RenderTexture
+                    camera.targetTexture = renderTexture;
+                    camera.Render();
+                    
+                    // 使用SFS自带的ImageTools.RenderTextureToPng方法
+                    byte[] pngData = SFS.UI.ImageTools.RenderTextureToPng(renderTexture, Screen.width, Screen.height);
+                    
+                    // 恢复相机设置
+                    camera.targetTexture = originalTarget;
+                    UnityEngine.Object.DestroyImmediate(renderTexture);
+                    
+                    if (pngData != null && pngData.Length > 0)
+                    {
+                        return pngData;
+                    }
+                    else
+                    {
+                        UnityEngine.Debug.LogError("[SFSControl] Failed to capture screenshot using ImageTools");
+                        return null;
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    // 恢复相机设置
+                    camera.targetTexture = originalTarget;
+                    if (renderTexture != null)
+                        UnityEngine.Object.DestroyImmediate(renderTexture);
+                    
+                    UnityEngine.Debug.LogError($"[SFSControl] Screenshot capture failed: {ex.Message}");
+                    return null;
+                }
             }
             catch (System.Exception ex)
             {

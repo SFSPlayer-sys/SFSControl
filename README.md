@@ -23,7 +23,7 @@ This project is an automation/remote control/information API server for SFS (Spa
 | `/rocket`           | `rocketIdOrName` (string/int, optional)                                    | Get the save info of a specific rocket (default: current)        | `/rocket?rocketIdOrName=1`                                     |
 | `/debuglog`         | None                                                                       | Get the game console log                                         | `/debuglog`                                                    |
 | `/mission`          | None                                                                       | Get current mission status and mission log                       | `/mission`                                                     |
-| `/planet_terrain`   | `planetCode` (string, required), `start` (double, optional, deg), `end` (double, optional, deg), `count` (int, optional) | Get an array of terrain heights for the specified planet, sampling from `start` to `end` degrees, with `count` samples. Use `count=-1` for maximum precision (100 samples per degree). | `/planet_terrain?planetCode=Moon&start=0&end=180&count=100`    |
+| `/planet_terrain`   | `planetCode` (string, required), `start` (double, optional, deg), `end` (double, optional, deg), `count` (int, optional) | Get an array of terrain heights for the specified planet, sampling from `start` to `end` degrees, with `count` samples. | `/planet_terrain?planetCode=Moon&start=0&end=180&count=100`    |
 | `/screenshot`       | None                                                                       | Get a screenshot of the SFS game window (PNG format). Requires `allowScreenshot` to be enabled in settings. | `/screenshot`                                                 |
 
 ---
@@ -72,6 +72,7 @@ All control APIs use `POST /control` with a JSON body:
 | TransferFuel      | fromTankId (int), toTankId (int), rocketIdOrName (string/int, optional) | Transfer fuel between tanks      | 0, 1, 0                       |
 | StopFuelTransfer  | rocketIdOrName (string/int, optional)                   | Stop all fuel transfers         | 0                             |
 | QuicksaveManager  | operation (str, optional), name (str)                    | Manage quicksaves (save/load/delete/rename)  | "save", "MySave"              |
+| WheelControl      | enable (bool, optional), turnAxis (float, required), rocketIdOrName (string/int, optional) | Control rover wheel direction | true, 0.5, null |
 | ShowToast         | toast (str)                                             | Show in-game toast message   | "Hello World!"                |
 | AddStage          | index (int), partIds (int[]), rocketIdOrName (string/int, optional) | Add stage to rocket      | 1, [0,1,2], 0                 |
 | RemoveStage       | index (int), rocketIdOrName (string/int, optional)      | Remove stage from rocket     | 1, 0                          |
@@ -88,10 +89,10 @@ All control APIs use `POST /control` with a JSON body:
 - Some parameters are optional; if omitted, the current player rocket is used.
 - `Wait`'s mode param: "rendezvous" waits for rendezvous window, "transfer" (default) waits for transfer window.
 - `Rotate` supports multiple references:
-- `"surface"`: A reference frame relative to the planet's surface (pointing toward the planet's center)  
-- `"orbit"`: A reference frame relative to the direction of orbital velocity  
-- `null` or other: The provided angle value is used by default  
-- Direction supports left/right/auto. 
+  - `"surface"`: 相对于行星表面的参考系（指向行星中心）
+  - `"orbit"`: 相对于轨道速度方向的参考系
+  - `null` or other: 默认使用提供的角度值
+  - Direction supports left/right/auto.
 - `SetOrbit` param: counterclockwise true=CCW, false=CW.
 - `/other`'s `fuelBarGroups` field matches the lower-left UI fuel bars.
 - `/other`'s `transferWindowDeltaV` field is the transfer window ΔV, in m/s.
@@ -108,6 +109,10 @@ All control APIs use `POST /control` with a JSON body:
   - `realtimePhysics` (optional): true = real-time physics simulation, false = rail simulation (default: false)
   - `showMessage` (optional): show in-game message (default: true)
   - Auto logic: If `realtimePhysics` is not specified (default false), 0-5x speed defaults to real-time, others default to rail simulation
+- `WheelControl` parameters:
+  - `enable` (optional): Enable/disable all wheels on the rocket (null = keep current state)
+  - `turnAxis` (required): Set wheel turn axis (-1.0 to 1.0, where -1 = left, 0 = straight, 1 = right)
+  - `rocketIdOrName` (optional): Rocket ID or name to control (default: current rocket)
 
 ---
 
@@ -118,6 +123,8 @@ curl -X POST http://127.0.0.1:27772/control \
   -H "Content-Type: application/json" \
   -d '{"method":"Rotate","args":[false, 90, null, "left"]}'
 ```
+
+
 
 ## Example: Get Transfer Window ΔV
 
@@ -130,5 +137,4 @@ curl http://127.0.0.1:27772/other
 ## License & Open Source
 
 - This project is licensed under GPL-3.0, see [LICENSE](LICENSE)
-
 - More info and source: [https://github.com/SFSPlayer-sys/SFSControl](https://github.com/SFSPlayer-sys/SFSControl)

@@ -1332,5 +1332,70 @@ namespace SFSControl
                 return $"Error: {ex.Message}";
             }
         }
+
+        // 车轮控制
+        public static string WheelControl(bool? enable = null, float turnAxis = 0f, string rocketIdOrName = null)
+        {
+            try
+            {
+                var rocket = FindRocket(rocketIdOrName);
+                if (rocket == null || rocket.partHolder?.parts == null)
+                {
+                    Debug.LogError("[Control] WheelControl: Rocket not found or parts not available");
+                    return "Error: Rocket not found or parts not available";
+                }
+
+                // 查找所有车轮模块
+                var wheelModules = new List<WheelModule>();
+                foreach (var part in rocket.partHolder.parts)
+                {
+                    if (part != null)
+                    {
+                        var wheels = part.GetModules<WheelModule>();
+                        if (wheels != null && wheels.Length > 0)
+                        {
+                            wheelModules.AddRange(wheels);
+                        }
+                    }
+                }
+
+                if (wheelModules.Count == 0)
+                {
+                    Debug.LogError("[Control] WheelControl: No wheel modules found on rocket");
+                    return "Error: No wheel modules found on rocket";
+                }
+
+                int modifiedCount = 0;
+                foreach (var wheel in wheelModules)
+                {
+                    if (wheel == null) continue;
+
+                    // 控制车轮开关状态（可选）
+                    if (enable.HasValue && wheel.on != null)
+                    {
+                        wheel.on.Value = enable.Value;
+                        modifiedCount++;
+                    }
+
+                    // 控制转向轴（必填）
+                    wheel.TurnAxis = Mathf.Clamp(turnAxis, -1f, 1f);
+                    modifiedCount++;
+                }
+
+                if (modifiedCount > 0)
+                {
+                    return $"Success: Modified {modifiedCount} wheel properties on {wheelModules.Count} wheel modules";
+                }
+                else
+                {
+                    return "Success: No changes made";
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] WheelControl error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
     }
 }
