@@ -43,7 +43,7 @@ All control APIs use `POST /control` with a JSON body:
 | SetThrottle       | size (float), rocketIdOrName (string/int, optional)     | Set throttle                 | 0.5, 0                        |
 | SetRCS            | on (bool), rocketIdOrName (string/int, optional)        | Toggle RCS                   | true, 1                       |
 | Stage             | rocketIdOrName (string/int, optional)                   | Activate staging             | 0                             |
-| Rotate            | isTarget (bool), angle (float), reference (str), direction (str), rocketIdOrName (string/int, optional) | Rotate/point to target angle | false, 90, null, "left", 0    |
+| Rotate            | isTarget (bool), angle (float), reference (str), direction (str), rocketIdOrName (string/int, optional) | Rotate/point to target angle | false, 90, "", "left", 0    |
 | StopRotate        | rocketIdOrName (string/int, optional)                   | Force stop rotation          | 1                             |
 | UsePart           | partId (int), rocketIdOrName (string/int, optional)     | Use part                     | 0, 1                          |
 | ClearDebris       | none                                                   | Clear debris                 |                               |
@@ -52,7 +52,7 @@ All control APIs use `POST /control` with a JSON body:
 | SwitchToBuild     | none                                                   | Switch to build scene        |                               |
 | ClearBlueprint    | none                                                   | Clear blueprint              |                               |
 | SetRotation       | angle (float), rocketIdOrName (string/int, optional)    | Set rotation directly        | 90, 0                         |
-| SetState          | x, y, vx, vy, angularVelocity, blueprintJson, rocketIdOrName (string/int, optional) | Set rocket state           | 0,0,0,0,0,null,0              |
+| SetState          | x, y, vx, vy, angularVelocity, blueprintJson, rocketIdOrName (string/int, optional) | Set rocket state           | 0,0,0,0,0,"",0              |
 | Launch            | -                                                    | Launch rocket from build scene | -                           |
 | SwitchRocket      | idOrName (string/int)                                   | Switch controlled rocket     | 1                             |
 | RenameRocket      | idOrName (string/int), newName (str)                    | Rename rocket                | 1, "MyRocket"                 |
@@ -72,7 +72,7 @@ All control APIs use `POST /control` with a JSON body:
 | TransferFuel      | fromTankId (int), toTankId (int), rocketIdOrName (string/int, optional) | Transfer fuel between tanks      | 0, 1, 0                       |
 | StopFuelTransfer  | rocketIdOrName (string/int, optional)                   | Stop all fuel transfers         | 0                             |
 | QuicksaveManager  | operation (str, optional), name (str)                    | Manage quicksaves (save/load/delete/rename)  | "save", "MySave"              |
-| WheelControl      | enable (bool, optional), turnAxis (float, required), rocketIdOrName (string/int, optional) | Control rover wheel direction | true, 0.5, null |
+| WheelControl      | enable (bool, optional), turnAxis (float, required), rocketIdOrName (string/int, optional) | Control rover wheel direction | true, 0.5, "" |
 | SetMapIconColor   | rgbaValue (string), rocketIdOrName (string/int, optional) | Set rocket map icon color | "#FF0000", 0 |
 | CreateRocket      | planetCode (string), blueprintJson (string), rocketName (string, optional), x (double, optional), y (double, optional), vx (double, optional), vy (double, optional), vr (double, optional) | Create rocket from blueprint at specified location | "Earth", "{...}", "MyRocket", 0, 0, 0, 0, 0 |
 | CreateObject      | objectType (string), planetCode (string), x (double, optional), y (double, optional), objectName (string, optional), hidden (bool, optional), explosionSize (float, optional), createSound (bool, optional), createShake (bool, optional), rotation (float, optional), angularVelocity (float, optional), ragdoll (bool, optional), fuelPercent (double, optional), temperature (float, optional), flagDirection (int, optional), showFlagAnimation (bool, optional) | Create various objects with full parameter control | "astronaut", "Earth", 0, 0, "MyAstronaut", false, 2.0, true, true, 0, 0, false, 1.0, 293.15, 1, true |
@@ -81,7 +81,7 @@ All control APIs use `POST /control` with a JSON body:
 | RemoveStage       | index (int), rocketIdOrName (string/int, optional)      | Remove stage from rocket     | 1, 0                          |
 | LogMessage        | type (str), message (str)                               | Write to game log            | "log", "Debug info"           |
 | SetCheat          | cheatName (str), enabled (bool)                         | Enable/disable cheat         | "infiniteFuel", true          |
-| Revert            | type (str)                                              | Revert action                | "launch"/"30s"/"3min"/"build" |
+| Revert            | type (str)                                              | Revert action                | "launch"/"30s"/"3min" |
 
 ---
 
@@ -90,11 +90,12 @@ All control APIs use `POST /control` with a JSON body:
 - **All POST APIs require Content-Type: application/json**.
 - All responses are JSON, containing a `result` field or detailed data.
 - Some parameters are optional; if omitted, the current player rocket is used.
+- **Important Note: When a parameter doesn't need a value, use empty string `""` instead of `null`!**
 - `Wait`'s mode param: "rendezvous" waits for rendezvous window, "transfer" (default) waits for transfer window.
 - `Rotate` supports multiple references:
-  - `"surface"`: 相对于行星表面的参考系（指向行星中心）
-  - `"orbit"`: 相对于轨道速度方向的参考系
-  - `null` or other: 默认使用提供的角度值
+  - `"surface"`: Relative to planet surface reference frame (pointing to planet center)
+  - `"orbit"`: Relative to orbital velocity direction reference frame
+  - `""` (empty string) or other: Default to using the provided angle value
   - Direction supports left/right/auto.
 - `SetOrbit` param: counterclockwise true=CCW, false=CW.
 - `/other`'s `fuelBarGroups` field matches the lower-left UI fuel bars.
@@ -113,7 +114,7 @@ All control APIs use `POST /control` with a JSON body:
   - `showMessage` (optional): show in-game message (default: true)
   - Auto logic: If `realtimePhysics` is not specified (default false), 0-5x speed defaults to real-time, others default to rail simulation
 - `WheelControl` parameters:
-  - `enable` (optional): Enable/disable all wheels on the rocket (null = keep current state)
+  - `enable` (optional): Enable/disable all wheels on the rocket ("" = keep current state)
   - `turnAxis` (required): Set wheel turn axis (-1.0 to 1.0, where -1 = left, 0 = straight, 1 = right)
   - `rocketIdOrName` (optional): Rocket ID or name to control (default: current rocket)
 - `SetMapIconColor` parameters:
@@ -151,6 +152,11 @@ All control APIs use `POST /control` with a JSON body:
     - `"flag"`: Flag objects with direction and animation control
     - `"explosion"`, `"explosionparticle"`: Explosion effects using original game system
     - `"mapicon"`: Map icons (similar to rocket icons)
+- `Revert` parameters:
+  - `"launch"`: Revert to launch state
+  - `"30s"`: Revert to 30 seconds ago
+  - `"3min"`: Revert to 3 minutes ago
+  - **Note: Revert does not support returning to build scene**
 
 ---
 
@@ -159,7 +165,7 @@ All control APIs use `POST /control` with a JSON body:
 ```bash
 curl -X POST http://127.0.0.1:27772/control \
   -H "Content-Type: application/json" \
-  -d '{"method":"Rotate","args":[false, 90, null, "left"]}'
+  -d '{"method":"Rotate","args":[false, 90, "", "left"]}'
 ```
 
 
