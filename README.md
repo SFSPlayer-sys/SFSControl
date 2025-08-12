@@ -73,6 +73,9 @@ All control APIs use `POST /control` with a JSON body:
 | StopFuelTransfer  | rocketIdOrName (string/int, optional)                   | Stop all fuel transfers         | 0                             |
 | QuicksaveManager  | operation (str, optional), name (str)                    | Manage quicksaves (save/load/delete/rename)  | "save", "MySave"              |
 | WheelControl      | enable (bool, optional), turnAxis (float, required), rocketIdOrName (string/int, optional) | Control rover wheel direction | true, 0.5, null |
+| SetMapIconColor   | rgbaValue (string), rocketIdOrName (string/int, optional) | Set rocket map icon color | "#FF0000", 0 |
+| CreateRocket      | planetCode (string), blueprintJson (string), rocketName (string, optional), x (double, optional), y (double, optional), vx (double, optional), vy (double, optional), vr (double, optional) | Create rocket from blueprint at specified location | "Earth", "{...}", "MyRocket", 0, 0, 0, 0, 0 |
+| CreateObject      | objectType (string), planetCode (string), x (double, optional), y (double, optional), objectName (string, optional), hidden (bool, optional), explosionSize (float, optional), createSound (bool, optional), createShake (bool, optional), rotation (float, optional), angularVelocity (float, optional), ragdoll (bool, optional), fuelPercent (double, optional), temperature (float, optional), flagDirection (int, optional), showFlagAnimation (bool, optional) | Create various objects with full parameter control | "astronaut", "Earth", 0, 0, "MyAstronaut", false, 2.0, true, true, 0, 0, false, 1.0, 293.15, 1, true |
 | ShowToast         | toast (str)                                             | Show in-game toast message   | "Hello World!"                |
 | AddStage          | index (int), partIds (int[]), rocketIdOrName (string/int, optional) | Add stage to rocket      | 1, [0,1,2], 0                 |
 | RemoveStage       | index (int), rocketIdOrName (string/int, optional)      | Remove stage from rocket     | 1, 0                          |
@@ -113,6 +116,41 @@ All control APIs use `POST /control` with a JSON body:
   - `enable` (optional): Enable/disable all wheels on the rocket (null = keep current state)
   - `turnAxis` (required): Set wheel turn axis (-1.0 to 1.0, where -1 = left, 0 = straight, 1 = right)
   - `rocketIdOrName` (optional): Rocket ID or name to control (default: current rocket)
+- `SetMapIconColor` parameters:
+  - `rgbaValue` (required): Color value in hex (#RRGGBB, #RRGGBBAA) or comma-separated (R,G,B,A) format
+  - `rocketIdOrName` (optional): Rocket ID or name to control (default: current rocket)
+  - Supported formats:
+    - Hex: "#FF0000" (red), "#00FF0080" (green with 50% alpha)
+    - RGBA: "1.0,0.0,0.0,0.5" (red with 50% alpha), "0,1,0" (green, full alpha)
+- `CreateRocket` parameters:
+  - `planetCode` (required): Planet codename where rocket will be created (e.g., "Earth", "Moon")
+  - `blueprintJson` (required): JSON string containing rocket blueprint data
+  - `rocketName` (optional): Custom name for the rocket (default: auto-generated name like "Rocket_0")
+  - `x`, `y` (optional): Position coordinates relative to planet center (default: 0, 0)
+  - `vx`, `vy` (optional): Initial velocity components (default: 0, 0)
+  - `vr` (optional): Initial angular velocity (default: 0)
+  - Blueprint format: JSON with parts array, stages array, and other rocket configuration data
+- `CreateObject` parameters:
+  - `objectType` (required): Type of object to create (see supported types below)
+  - `planetCode` (required): Planet codename where object will be created
+  - `x`, `y` (optional): Position coordinates relative to planet center (default: 0, 0)
+  - `objectName` (optional): Custom name for the object (default: auto-generated name)
+  - `hidden` (optional): Whether to create the object as hidden/inactive (default: false)
+  - `explosionSize` (optional): Size/strength of explosion effect (default: 2.0, only for explosion type)
+  - `createSound` (optional): Whether to create explosion sound (default: true, only for explosion type)
+  - `createShake` (optional): Whether to create camera shake effect (default: true, only for explosion type)
+  - `rotation` (optional): Initial rotation in degrees (default: 0, mainly for astronaut)
+  - `angularVelocity` (optional): Initial angular velocity (default: 0, mainly for astronaut)
+  - `ragdoll` (optional): Whether astronaut starts in ragdoll state (default: false, only for astronaut)
+  - `fuelPercent` (optional): Astronaut fuel percentage 0.0-1.0 (default: 1.0, only for astronaut)
+  - `temperature` (optional): Astronaut temperature in Kelvin (default: 293.15K, only for astronaut)
+  - `flagDirection` (optional): Flag direction -1 (left) or 1 (right) (default: 1, only for flag)
+  - `showFlagAnimation` (optional): Whether to show flag planting animation (default: true, only for flag)
+  - Supported object types:
+    - `"astronaut"`, `"eva"`: Astronaut in EVA state with full physics control
+    - `"flag"`: Flag objects with direction and animation control
+    - `"explosion"`, `"explosionparticle"`: Explosion effects using original game system
+    - `"mapicon"`: Map icons (similar to rocket icons)
 
 ---
 

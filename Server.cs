@@ -260,7 +260,6 @@ namespace SFSControl
                             }
                         }
                         responseString = JsonConvert.SerializeObject(saves, Formatting.Indented, new JsonSerializerSettings { ReferenceLoopHandling = ReferenceLoopHandling.Ignore });
-                        //Debug.Log("[Server] ...Serialization complete.");
                         break;
                     case "/planet":
                         string codename = null;
@@ -311,7 +310,6 @@ namespace SFSControl
                         responseString = JsonConvert.SerializeObject(missionInfo, Formatting.Indented, new JsonSerializerSettings { ReferenceLoopHandling = ReferenceLoopHandling.Ignore });
                         break;
                     case "/control":
-                        // 读取POST body
                         string body;
                         using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
                             body = reader.ReadToEnd();
@@ -334,8 +332,6 @@ namespace SFSControl
                                     result = Control.Stage(rocketIdOrName_stage);
                                     break;
                                 case "Rotate":
-                                    // 支持多参数，兼容新Rotate接口
-                                    // args: isTarget, angle, reference, direction, rocketIdOrName
                                     bool isTarget = false;
                                     float angle = 0;
                                     string reference = null;
@@ -494,6 +490,41 @@ namespace SFSControl
                                     float turnAxis = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToSingle(controlReq.args[1]) : 0f;
                                     string rocketIdOrName_wheel = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
                                     result = Control.WheelControl(enable, turnAxis, rocketIdOrName_wheel);
+                                    break;
+                                case "SetMapIconColor":
+                                    string rgbaValue = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    string rocketIdOrName_color = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.SetMapIconColor(rgbaValue, rocketIdOrName_color);
+                                    break;
+                                case "CreateRocket":
+                                    string planetCode_rocket = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    string blueprintJson_rocket = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    string rocketName = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : "";
+                                    double x_rocket = controlReq.args.Length > 3 && controlReq.args[3] != null ? Convert.ToDouble(controlReq.args[3]) : 0.0;
+                                    double y_rocket = controlReq.args.Length > 4 && controlReq.args[4] != null ? Convert.ToDouble(controlReq.args[4]) : 0.0;
+                                    double vx_rocket = controlReq.args.Length > 5 && controlReq.args[5] != null ? Convert.ToDouble(controlReq.args[5]) : 0.0;
+                                    double vy_rocket = controlReq.args.Length > 6 && controlReq.args[6] != null ? Convert.ToDouble(controlReq.args[6]) : 0.0;
+                                    double vr_rocket = controlReq.args.Length > 7 && controlReq.args[7] != null ? Convert.ToDouble(controlReq.args[7]) : 0.0;
+                                    result = Control.CreateRocket(planetCode_rocket, blueprintJson_rocket, rocketName, x_rocket, y_rocket, vx_rocket, vy_rocket, vr_rocket);
+                                    break;
+                                case "CreateObject":
+                                    string objectType = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    string planetCode_obj = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    double x_obj = controlReq.args.Length > 2 && controlReq.args[2] != null ? Convert.ToDouble(controlReq.args[2]) : 0.0;
+                                    double y_obj = controlReq.args.Length > 3 && controlReq.args[3] != null ? Convert.ToDouble(controlReq.args[3]) : 0.0;
+                                    string objectName = controlReq.args.Length > 4 && controlReq.args[4] != null ? controlReq.args[4].ToString() : "";
+                                    bool hidden = controlReq.args.Length > 5 && controlReq.args[5] != null ? Convert.ToBoolean(controlReq.args[5]) : false;
+                                    float explosionSize = controlReq.args.Length > 6 && controlReq.args[6] != null ? Convert.ToSingle(controlReq.args[6]) : 2.0f;
+                                    bool createSound = controlReq.args.Length > 7 && controlReq.args[7] != null ? Convert.ToBoolean(controlReq.args[7]) : true;
+                                    bool createShake = controlReq.args.Length > 8 && controlReq.args[8] != null ? Convert.ToBoolean(controlReq.args[8]) : true;
+                                    float rotation_obj = controlReq.args.Length > 9 && controlReq.args[9] != null ? Convert.ToSingle(controlReq.args[9]) : 0f;
+                                    float angularVelocity_obj = controlReq.args.Length > 10 && controlReq.args[10] != null ? Convert.ToSingle(controlReq.args[10]) : 0f;
+                                    bool ragdoll = controlReq.args.Length > 11 && controlReq.args[11] != null ? Convert.ToBoolean(controlReq.args[11]) : false;
+                                    double fuelPercent = controlReq.args.Length > 12 && controlReq.args[12] != null ? Convert.ToDouble(controlReq.args[12]) : 1.0;
+                                    float temperature = controlReq.args.Length > 13 && controlReq.args[13] != null ? Convert.ToSingle(controlReq.args[13]) : 293.15f;
+                                    int flagDirection = controlReq.args.Length > 14 && controlReq.args[14] != null ? Convert.ToInt32(controlReq.args[14]) : 1;
+                                    bool showFlagAnimation = controlReq.args.Length > 15 && controlReq.args[15] != null ? Convert.ToBoolean(controlReq.args[15]) : true;
+                                    result = Control.CreateObject(objectType, planetCode_obj, x_obj, y_obj, objectName, hidden, explosionSize, createSound, createShake, rotation_obj, angularVelocity_obj, ragdoll, fuelPercent, temperature, flagDirection, showFlagAnimation);
                                     break;
                                 default:
                                     result = "Error: Unknown method";

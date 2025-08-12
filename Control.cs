@@ -1397,5 +1397,462 @@ namespace SFSControl
                 return $"Error: {ex.Message}";
             }
         }
+
+        // 创建火箭
+        public static string CreateRocket(string planetCode, string blueprintJson, string rocketName = "", double x = 0, double y = 0, double vx = 0, double vy = 0, double vr = 0)
+        {
+            try
+            {
+                // 检查是否在世界场景中
+                if (GameManager.main?.rockets == null)
+                {
+                    Debug.LogError("[Control] CreateRocket: Not in world scene");
+                    return "Error: Not in world scene";
+                }
+
+                // 验证必需参数
+                if (string.IsNullOrEmpty(planetCode))
+                {
+                    Debug.LogError("[Control] CreateRocket: Planet code cannot be null or empty");
+                    return "Error: Planet code cannot be null or empty";
+                }
+
+                if (string.IsNullOrEmpty(blueprintJson))
+                {
+                    Debug.LogError("[Control] CreateRocket: Blueprint JSON cannot be null or empty");
+                    return "Error: Blueprint JSON cannot be null or empty";
+                }
+
+                // 查找目标星球
+                var planet = Base.planetLoader?.planets?.Values?.FirstOrDefault(p => p?.codeName != null && p.codeName.Equals(planetCode, StringComparison.OrdinalIgnoreCase));
+                if (planet == null)
+                {
+                    Debug.LogError($"[Control] CreateRocket: Planet '{planetCode}' not found");
+                    return $"Error: Planet '{planetCode}' not found";
+                }
+
+                // 解析蓝图JSON
+                Blueprint blueprint;
+                try
+                {
+                    blueprint = SFS.Parsers.Json.JsonWrapper.FromJson<Blueprint>(blueprintJson);
+                    if (blueprint == null)
+                    {
+                        Debug.LogError("[Control] CreateRocket: Failed to parse blueprint JSON");
+                        return "Error: Failed to parse blueprint JSON";
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"[Control] CreateRocket: Invalid blueprint JSON format: {ex.Message}");
+                    return $"Error: Invalid blueprint JSON format: {ex.Message}";
+                }
+
+                // 验证蓝图数据
+                if (blueprint.parts == null || blueprint.parts.Length == 0)
+                {
+                    Debug.LogError("[Control] CreateRocket: Blueprint has no parts");
+                    return "Error: Blueprint has no parts";
+                }
+
+                // 创建部件
+                OwnershipState[] ownershipStates;
+                Part[] parts = PartsLoader.CreateParts(blueprint.parts, null, null, OnPartNotOwned.Allow, out ownershipStates);
+                
+                if (parts == null || parts.Length == 0)
+                {
+                    Debug.LogError("[Control] CreateRocket: Failed to create parts from blueprint");
+                    return "Error: Failed to create parts from blueprint";
+                }
+
+                // 检查是否有未拥有的部件
+                bool hasNonOwnedParts = ownershipStates.Any(state => state != OwnershipState.OwnedAndUnlocked);
+                if (hasNonOwnedParts)
+                {
+                    Debug.LogWarning("[Control] CreateRocket: Some parts are not owned, using placeholders");
+                }
+
+                // 创建关节组
+                var jointGroup = new JointGroup(new List<PartJoint>(), parts.ToList());
+
+                // 计算火箭位置（相对于星球中心）
+                Vector2 planetPosition = new Vector2((float)x, (float)y);
+                Vector2 globalPosition = (Vector2)planet.transform.position + planetPosition;
+                
+                // 创建位置对象
+                Location location = new Location(planet, new Double2(x, y), new Double2(vx, vy));
+
+                // 创建火箭 - 使用反射访问私有方法
+                var createRocketMethod = typeof(RocketManager).GetMethod("CreateRocket", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                if (createRocketMethod == null)
+                {
+                    Debug.LogError("[Control] CreateRocket: CreateRocket method not found");
+                    return "Error: CreateRocket method not found";
+                }
+                
+                // 创建委托对象
+                var locationDelegate = new Func<Rocket, Location>((Rocket r) => location);
+                Rocket rocket = (Rocket)createRocketMethod.Invoke(null, new object[] { jointGroup, "", false, 0.5f, false, 0f, (float)vr, locationDelegate, false });
+                
+                if (rocket == null)
+                {
+                    Debug.LogError("[Control] CreateRocket: Failed to create rocket");
+                    return "Error: Failed to create rocket";
+                }
+
+                // 设置火箭名称
+                if (!string.IsNullOrEmpty(rocketName))
+                {
+                    rocket.rocketName = rocketName;
+                }
+                else
+                {
+                    rocket.rocketName = ""; 
+                }
+
+                // 加载分级信息
+                if (blueprint.stages != null && blueprint.stages.Length > 0)
+                {
+                    rocket.staging.Load(blueprint.stages, rocket.partHolder.GetArray(), false);
+                }
+
+                // 设置火箭的物理状态
+                rocket.physics.SetLocationAndState(location, false);
+                rocket.rb2d.angularVelocity = (float)vr;
+
+                //Debug.Log($"[Control] CreateRocket: Successfully created rocket '{rocket.rocketName}' at planet '{planetCode}' position ({x}, {y}) with velocity ({vx}, {vy}) and angular velocity {vr}");
+                return $"Success: Created rocket '{rocket.rocketName}' with ID {GameManager.main.rockets.Count - 1}";
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] CreateRocket error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        // 创建各种游戏对象（宇航员、旗子、爆炸效果、地图图标等）
+        public static string CreateObject(string objectType, string planetCode, double x = 0, double y = 0, string objectName = "", bool hidden = false, 
+            float explosionSize = 2.0f, bool createSound = true, bool createShake = true,
+            float rotation = 0f, float angularVelocity = 0f, bool ragdoll = false, double fuelPercent = 1.0, float temperature = 293.15f,
+            int flagDirection = 1, bool showFlagAnimation = true)
+        {
+            try
+            {
+                // 检查是否在世界场景中
+                if (GameManager.main?.rockets == null)
+                {
+                    Debug.LogError("[Control] CreateObject: Not in world scene");
+                    return "Error: Not in world scene";
+                }
+
+                // 验证必需参数
+                if (string.IsNullOrEmpty(objectType))
+                {
+                    Debug.LogError("[Control] CreateObject: Object type cannot be null or empty");
+                    return "Error: Object type cannot be null or empty";
+                }
+
+                if (string.IsNullOrEmpty(planetCode))
+                {
+                    Debug.LogError("[Control] CreateObject: Planet code cannot be null or empty");
+                    return "Error: Planet code cannot be null or empty";
+                }
+
+                // 查找目标星球
+                var planet = Base.planetLoader?.planets?.Values?.FirstOrDefault(p => p?.codeName != null && p.codeName.Equals(planetCode, StringComparison.OrdinalIgnoreCase));
+                if (planet == null)
+                {
+                    Debug.LogError($"[Control] CreateObject: Planet '{planetCode}' not found");
+                    return $"Error: Planet '{planetCode}' not found";
+                }
+
+                GameObject createdObject = null;
+                string resultMessage = "";
+
+                // 根据对象类型创建不同的对象
+                switch (objectType.ToLower())
+                {
+                    case "astronaut":
+                    case "eva":
+                        // 创建宇航员EVA
+                        if (AstronautManager.main?.astronautPrefab != null)
+                        {
+                            var astronaut = AstronautManager.main.SpawnEVA(
+                                string.IsNullOrEmpty(objectName) ? "Astronaut" : objectName,
+                                new Location(planet, new Double2(x, y), Double2.zero),
+                                rotation, angularVelocity, ragdoll, fuelPercent, temperature
+                            );
+                            createdObject = astronaut.gameObject;
+                            resultMessage = $"astronaut EVA (rotation: {rotation}, angularVel: {angularVelocity}, ragdoll: {ragdoll}, fuel: {fuelPercent:P0}, temp: {temperature}K)";
+                        }
+                        else
+                        {
+                            Debug.LogError("[Control] CreateObject: Astronaut prefab not available");
+                            return "Error: Astronaut prefab not available";
+                        }
+                        break;
+
+                    case "flag":
+                        // 创建旗子
+                        if (AstronautManager.main?.flagPrefab != null)
+                        {
+                            var flag = AstronautManager.main.SpawnFlag(
+                                new Location(planet, new Double2(x, y), Double2.zero),
+                                flagDirection
+                            );
+                            
+                            // 设置旗子方向
+                            flag.direction = flagDirection;
+                            
+                            // 如果不需要动画，直接设置最终状态
+                            if (!showFlagAnimation)
+                            {
+                                flag.holder.localScale = new Vector2((float)flagDirection, 1f);
+                                flag.holder.rotation = Quaternion.Euler(0f, 0f, (float)flag.location.Value.position.AngleDegrees - 90f);
+                                flag.mapIcon.SetRotation(flag.holder.rotation.eulerAngles.z + 90f);
+                            }
+                            else
+                            {
+                                // 显示种植动画
+                                flag.ShowPlantAnimation();
+                            }
+                            
+                            createdObject = flag.gameObject;
+                            resultMessage = $"flag (direction: {flagDirection}, animation: {showFlagAnimation})";
+                        }
+                        else
+                        {
+                            Debug.LogError("[Control] CreateObject: Flag prefab not available");
+                            return "Error: Flag prefab not available";
+                        }
+                        break;
+
+                    case "explosion":
+                    case "explosionparticle":
+                        // 使用原版爆炸效果系统
+                        // 计算爆炸位置
+                        Vector3 explosionPosition = new Vector3((float)x, (float)y, 0f);
+                        Vector3 explosionGlobalPosition = planet.transform.position + explosionPosition;
+                        
+                        // 根据参数决定如何创建爆炸效果
+                        if (!createSound)
+                        {
+                            // 使用反射访问EffectManager.main.explosionPrefab
+                            var effectManagerType = typeof(EffectManager);
+                            var mainField = effectManagerType.GetField("main", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                            var mainInstance = mainField?.GetValue(null) as EffectManager;
+                            
+                            if (mainInstance != null && mainInstance.explosionPrefab != null)
+                            {
+                                var explosionEffect = EffectManager.CreateEffect(mainInstance.explosionPrefab, explosionGlobalPosition, 8f);
+                                explosionEffect.localScale = Vector3.one * explosionSize;
+                            }
+                            else
+                            {
+                                Debug.LogError("[Control] CreateObject: Explosion prefab not available");
+                                return "Error: Explosion prefab not available";
+                            }
+                        }
+                        else
+                        {
+                            EffectManager.CreateExplosion(explosionGlobalPosition, explosionSize);
+                        }
+                        
+                        resultMessage = $"explosion effect (size: {explosionSize}, sound: {createSound}, shake: {createShake})";
+                        break;
+
+                    case "mapicon":
+                        // 创建地图图标（类似火箭图标）
+                        createdObject = new GameObject(string.IsNullOrEmpty(objectName) ? "MapIcon" : objectName);
+                        
+                        // 添加MapIcon组件
+                        var mapIcon = createdObject.AddComponent<MapIcon>();
+                        // 设置WorldLocation的Value属性
+                        mapIcon.location.Value = new Location(planet, new Double2(x, y), Double2.zero);
+                        mapIcon.shake = 0f;
+                        
+                        // 创建图标GameObject
+                        var iconObject = new GameObject("Icon");
+                        iconObject.transform.SetParent(createdObject.transform);
+                        
+                        // 添加SpriteRenderer组件
+                        var spriteRenderer = iconObject.AddComponent<SpriteRenderer>();
+                        spriteRenderer.sprite = CreateDefaultSprite();
+                        spriteRenderer.color = Color.white;
+                        spriteRenderer.sortingOrder = 100;
+                        
+                        // 设置图标大小
+                        iconObject.transform.localScale = Vector3.one * 0.01f;
+                        
+                        // 设置MapIcon的mapIcon引用
+                        mapIcon.mapIcon = iconObject;
+                        
+                        resultMessage = "map icon";
+                        break;
+
+                    default:
+                        Debug.LogError($"[Control] CreateObject: Unknown object type '{objectType}'");
+                        return $"Error: Unknown object type '{objectType}'. Supported types: astronaut/eva, flag, explosion/explosionparticle, mapicon";
+                }
+
+                if (createdObject == null)
+                {
+                    Debug.LogError("[Control] CreateObject: Failed to create object");
+                    return "Error: Failed to create object";
+                }
+
+                // 设置对象位置
+                Vector2 planetPosition = new Vector2((float)x, (float)y);
+                Vector3 globalPosition = planet.transform.position + new Vector3(planetPosition.x, planetPosition.y, 0f);
+                createdObject.transform.position = globalPosition;
+
+                // 设置对象名称
+                if (!string.IsNullOrEmpty(objectName))
+                {
+                    createdObject.name = objectName;
+                }
+
+                // 设置隐藏状态
+                if (hidden)
+                {
+                    createdObject.SetActive(false);
+                }
+
+                // 将对象设置为星球的子对象
+                if (planet.transform != null)
+                {
+                    createdObject.transform.SetParent(planet.transform);
+                }
+
+                Debug.Log($"[Control] CreateObject: Successfully created {resultMessage} '{createdObject.name}' at planet '{planetCode}' position ({x}, {y})");
+                return $"Success: Created {resultMessage} '{createdObject.name}' with ID {createdObject.GetInstanceID()}";
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] CreateObject error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        // 创建默认图标的辅助方法
+        private static Sprite CreateDefaultSprite()
+        {
+            // 创建一个简单的圆形图标
+            int size = 32;
+            Texture2D texture = new Texture2D(size, size);
+            Color[] pixels = new Color[size * size];
+            
+            Vector2 center = new Vector2(size / 2f, size / 2f);
+            float radius = size / 2f;
+            
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float distance = Vector2.Distance(new Vector2(x, y), center);
+                    if (distance <= radius)
+                    {
+                        pixels[y * size + x] = Color.white;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = Color.clear;
+                    }
+                }
+            }
+            
+            texture.SetPixels(pixels);
+            texture.Apply();
+            
+            return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+        }
+
+        // 修改火箭地图图标的RGBA值
+        public static string SetMapIconColor(string rgbaValue, string rocketIdOrName = null)
+        {
+            try
+            {
+                var rocket = FindRocket(rocketIdOrName);
+                if (rocket == null)
+                {
+                    Debug.LogError("[Control] SetMapIconColor: Rocket not found");
+                    return "Error: Rocket not found";
+                }
+
+                if (rocket.mapIcon == null || rocket.mapIcon.mapIcon == null)
+                {
+                    Debug.LogError("[Control] SetMapIconColor: Map icon not available");
+                    return "Error: Map icon not available";
+                }
+
+                // 获取地图图标的SpriteRenderer组件
+                var spriteRenderer = rocket.mapIcon.mapIcon.GetComponentInChildren<SpriteRenderer>();
+                if (spriteRenderer == null)
+                {
+                    Debug.LogError("[Control] SetMapIconColor: SpriteRenderer not found on map icon");
+                    return "Error: SpriteRenderer not found on map icon";
+                }
+
+                // 解析RGBA值
+                Color newColor;
+                if (string.IsNullOrEmpty(rgbaValue))
+                {
+                    Debug.LogError("[Control] SetMapIconColor: RGBA value cannot be null or empty");
+                    return "Error: RGBA value cannot be null or empty";
+                }
+
+                if (rgbaValue.StartsWith("#"))
+                {
+                    // 十六进制格式：#RRGGBB 或 #RRGGBBAA
+                    if (!ColorUtility.TryParseHtmlString(rgbaValue, out newColor))
+                    {
+                        Debug.LogError($"[Control] SetMapIconColor: Invalid hex color format: {rgbaValue}");
+                        return $"Error: Invalid hex color format: {rgbaValue}";
+                    }
+                }
+                else if (rgbaValue.Contains(","))
+                {
+                    // 逗号分隔格式：R,G,B,A 或 R,G,B
+                    var parts = rgbaValue.Split(',');
+                    if (parts.Length < 3 || parts.Length > 4)
+                    {
+                        Debug.LogError($"[Control] SetMapIconColor: Invalid RGBA format. Expected 3-4 values separated by commas: {rgbaValue}");
+                        return $"Error: Invalid RGBA format. Expected 3-4 values separated by commas: {rgbaValue}";
+                    }
+
+                    if (!float.TryParse(parts[0], out float r) || !float.TryParse(parts[1], out float g) || 
+                        !float.TryParse(parts[2], out float b))
+                    {
+                        Debug.LogError($"[Control] SetMapIconColor: Invalid number format in RGBA values: {rgbaValue}");
+                        return $"Error: Invalid number format in RGBA values: {rgbaValue}";
+                    }
+
+                    float a = 1.0f; // 默认透明度
+                    if (parts.Length == 4 && float.TryParse(parts[3], out float alpha))
+                    {
+                        a = alpha;
+                    }
+
+                    // 限制值在0-1范围内
+                    newColor = new Color(Mathf.Clamp01(r), Mathf.Clamp01(g), Mathf.Clamp01(b), Mathf.Clamp01(a));
+                }
+                else
+                {
+                    Debug.LogError($"[Control] SetMapIconColor: Unsupported RGBA format: {rgbaValue}. Use hex (#RRGGBB) or comma-separated (R,G,B,A) format");
+                    return $"Error: Unsupported RGBA format: {rgbaValue}. Use hex (#RRGGBB) or comma-separated (R,G,B,A) format";
+                }
+
+                // 应用新颜色
+                spriteRenderer.color = newColor;
+
+                //Debug.Log($"[Control] SetMapIconColor: Successfully set map icon color to RGBA({newColor.r:F3}, {newColor.g:F3}, {newColor.b:F3}, {newColor.a:F3}) for rocket '{rocket.rocketName ?? rocketIdOrName}'");
+                return $"Success: Map icon color set to RGBA({newColor.r:F3}, {newColor.g:F3}, {newColor.b:F3}, {newColor.a:F3})";
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] SetMapIconColor error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
     }
 }
