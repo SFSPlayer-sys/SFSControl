@@ -388,7 +388,8 @@ namespace SFSControl
                                     break;
                                 case "StopRotate":
                                     string rocketIdOrName_stoprotate = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
-                                    result = Control.StopRotate(rocketIdOrName_stoprotate);
+                                    bool stopCoroutine = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToBoolean(controlReq.args[1]) : true;
+                                    result = Control.StopRotate(rocketIdOrName_stoprotate, stopCoroutine);
                                     break;
                                 case "AddStage":
                                     string rocketIdOrName_addstage = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
@@ -427,7 +428,8 @@ namespace SFSControl
                                     break;
                                 case "Wait":
                                     string mode = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : "transfer";
-                                    result = Control.WaitForWindow(mode);
+                                    double? parameter = controlReq.args.Length > 1 && controlReq.args[1] != null ? (double?)Convert.ToDouble(controlReq.args[1]) : null;
+                                    result = Control.WaitForWindow(mode, parameter);
                                     break;
                                 case "SetCheat":
                                     result = Control.SetCheat(controlReq.args[0].ToString(), Convert.ToBoolean(controlReq.args[1]));
@@ -492,7 +494,7 @@ namespace SFSControl
                                     result = Control.WheelControl(enable, turnAxis, rocketIdOrName_wheel);
                                     break;
                                 case "SetMapIconColor":
-                                    string rgbaValue = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
+                                    string rgbaValue = controlReq.args[0].ToString();
                                     string rocketIdOrName_color = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
                                     result = Control.SetMapIconColor(rgbaValue, rocketIdOrName_color);
                                     break;
@@ -508,11 +510,11 @@ namespace SFSControl
                                     result = Control.CreateRocket(planetCode_rocket, blueprintJson_rocket, rocketName, x_rocket, y_rocket, vx_rocket, vy_rocket, vr_rocket);
                                     break;
                                 case "CreateObject":
-                                    string objectType = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
-                                    string planetCode_obj = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    string objectType = controlReq.args.Length > 0 ? controlReq.args[0]?.ToString() ?? "" : "";
+                                    string planetCode_obj = controlReq.args.Length > 1 ? controlReq.args[1]?.ToString() ?? "" : "";
                                     double x_obj = controlReq.args.Length > 2 && controlReq.args[2] != null ? Convert.ToDouble(controlReq.args[2]) : 0.0;
                                     double y_obj = controlReq.args.Length > 3 && controlReq.args[3] != null ? Convert.ToDouble(controlReq.args[3]) : 0.0;
-                                    string objectName = controlReq.args.Length > 4 && controlReq.args[4] != null ? controlReq.args[4].ToString() : "";
+                                    string objectName = controlReq.args.Length > 4 ? controlReq.args[4]?.ToString() ?? "" : "";
                                     bool hidden = controlReq.args.Length > 5 && controlReq.args[5] != null ? Convert.ToBoolean(controlReq.args[5]) : false;
                                     float explosionSize = controlReq.args.Length > 6 && controlReq.args[6] != null ? Convert.ToSingle(controlReq.args[6]) : 2.0f;
                                     bool createSound = controlReq.args.Length > 7 && controlReq.args[7] != null ? Convert.ToBoolean(controlReq.args[7]) : true;
@@ -524,7 +526,9 @@ namespace SFSControl
                                     float temperature = controlReq.args.Length > 13 && controlReq.args[13] != null ? Convert.ToSingle(controlReq.args[13]) : 293.15f;
                                     int flagDirection = controlReq.args.Length > 14 && controlReq.args[14] != null ? Convert.ToInt32(controlReq.args[14]) : 1;
                                     bool showFlagAnimation = controlReq.args.Length > 15 && controlReq.args[15] != null ? Convert.ToBoolean(controlReq.args[15]) : true;
-                                    result = Control.CreateObject(objectType, planetCode_obj, x_obj, y_obj, objectName, hidden, explosionSize, createSound, createShake, rotation_obj, angularVelocity_obj, ragdoll, fuelPercent, temperature, flagDirection, showFlagAnimation);
+                                    bool createDamage = controlReq.args.Length > 16 && controlReq.args[16] != null ? Convert.ToBoolean(controlReq.args[16]) : true;
+                                    
+                                    result = Control.CreateObject(objectType, planetCode_obj, x_obj, y_obj, objectName, hidden, explosionSize, createSound, createShake, rotation_obj, angularVelocity_obj, ragdoll, fuelPercent, temperature, flagDirection, showFlagAnimation, createDamage);
                                     break;
                                 default:
                                     result = "Error: Unknown method";

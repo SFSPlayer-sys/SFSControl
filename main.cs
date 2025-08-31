@@ -2,6 +2,7 @@ using ModLoader;
 using UnityEngine;
 using SFSControl;
 using HarmonyLib;
+using System.Collections.Generic;
 
 namespace SFSControl
 {
@@ -16,7 +17,7 @@ namespace SFSControl
         public override string DisplayName => "SFSControl";
         public override string Author => "SFSGamer"; 
         public override string MinimumGameVersionNecessary => "1.5.10.2";
-        public override string ModVersion => "1.0.9";
+        public override string ModVersion => "1.1.1";
         public override string Description => "Provide an interface for scripts to control SFS externally.";
 
         private Server serverComponent;
@@ -60,6 +61,68 @@ namespace SFSControl
                 }
             }
             DeltaVPatchHelper.LastTransferWindowDeltaV = null;
+        }
+    }
+
+    // 修复地图图标缩放后变白的问题
+    [HarmonyPatch(typeof(SFS.World.Maps.MapIcon), "UpdateAlpha")]
+    public static class Patch_MapIcon_UpdateAlpha
+    {
+        // 存储用户设置的颜色（包括透明度）
+        private static Dictionary<SpriteRenderer, Color> userSetColors = new Dictionary<SpriteRenderer, Color>();
+        // 标记是否使用用户设置的透明度
+        private static Dictionary<SpriteRenderer, bool> useUserAlpha = new Dictionary<SpriteRenderer, bool>();
+
+        // 设置用户颜色
+        public static void SetUserColor(SpriteRenderer spriteRenderer, Color color, bool preserveAlpha = false)
+        {
+            if (spriteRenderer != null)
+            {
+                userSetColors[spriteRenderer] = color;
+                useUserAlpha[spriteRenderer] = preserveAlpha;
+            }
+        }
+
+        // 清除用户颜色
+        public static void ClearUserColor(SpriteRenderer spriteRenderer)
+        {
+            if (spriteRenderer != null)
+            {
+                userSetColors.Remove(spriteRenderer);
+                useUserAlpha.Remove(spriteRenderer);
+            }
+        }
+
+        static void Postfix(SFS.World.Maps.MapIcon __instance)
+        {
+            if (__instance.mapIcon == null) return;
+
+            var spriteRenderer = __instance.mapIcon.GetComponentInChildren<SpriteRenderer>();
+            if (spriteRenderer == null) return;
+
+            // 检查是否有用户设置的颜色
+            if (userSetColors.TryGetValue(spriteRenderer, out Color userColor))
+            {
+                if (__instance.location.planet.Value == null) return;
+                
+                // 检查是否使用用户设置的透明度
+                bool preserveUserAlpha = useUserAlpha.TryGetValue(spriteRenderer, out bool preserve) && preserve;
+                
+                if (preserveUserAlpha)
+                {
+                    // 完全使用用户设置的颜色，包括透明度
+                    spriteRenderer.color = userColor;
+                }
+                else
+                {
+                    // 计算透明度
+                    double num = __instance.location.position.Value.magnitude * 50.0 + __instance.location.planet.Value.SOI * 5.0;
+                    float fadeOut = SFS.World.Maps.MapDrawer.GetFadeOut(SFS.World.Maps.Map.view.view.distance, num, num * 1.25);
+                    
+                    // 保持用户设置的RGB颜色，只更新透明度
+                    spriteRenderer.color = new Color(userColor.r, userColor.g, userColor.b, fadeOut);
+                }
+            }
         }
     }
 }

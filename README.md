@@ -19,7 +19,7 @@ This project is an automation/remote control/information API server for SFS (Spa
 | `/rockets`          | None                                                                       | Get a list of all rockets in the scene (save info)               | `/rockets`                                                     |
 | `/planet`           | `codename` (string, optional)                                              | Get detailed info of the specified planet (default: current)     | `/planet?codename=Moon`                                        |
 | `/planets`          | None                                                                       | Get detailed info for all planets                                | `/planets`                                                     |
-| `/other`            | `rocketIdOrName` (string/int, optional)                                    | Get miscellaneous info (window ΔV, fuel bars, nav target, mass, thrust, TWR, etc.)  | `/other?rocketIdOrName=1`                                      |
+| `/other`            | `rocketIdOrName` (string/int, optional)                                    | Get miscellaneous info (window ΔV, fuel bars, nav target, mass, thrust, TWR, inertia, etc.)  | `/other?rocketIdOrName=1`                                      |
 | `/rocket`           | `rocketIdOrName` (string/int, optional)                                    | Get the save info of a specific rocket (default: current)        | `/rocket?rocketIdOrName=1`                                     |
 | `/debuglog`         | None                                                                       | Get the game console log                                         | `/debuglog`                                                    |
 | `/mission`          | None                                                                       | Get current mission status and mission log                       | `/mission`                                                     |
@@ -44,7 +44,7 @@ All control APIs use `POST /control` with a JSON body:
 | SetRCS            | on (bool), rocketIdOrName (string/int, optional)        | Toggle RCS                   | true, 1                       |
 | Stage             | rocketIdOrName (string/int, optional)                   | Activate staging             | 0                             |
 | Rotate            | isTarget (bool), angle (float), reference (str), direction (str), rocketIdOrName (string/int, optional) | Rotate/point to target angle | false, 90, "", "left", 0    |
-| StopRotate        | rocketIdOrName (string/int, optional)                   | Force stop rotation          | 1                             |
+| StopRotate        | rocketIdOrName (string/int, optional), stopCoroutine (bool, optional) | Force stop rotation (with optional coroutine control) | 1, true                       |
 | UsePart           | partId (int), rocketIdOrName (string/int, optional)     | Use part                     | 0, 1                          |
 | ClearDebris       | none                                                   | Clear debris                 |                               |
 | Build             | blueprint (str, JSON)                                   | Build rocket                 | "{...}"                       |
@@ -61,7 +61,7 @@ All control APIs use `POST /control` with a JSON body:
 | TimewarpPlus      | none                                                   | Increase timewarp            |                               |
 | TimewarpMinus     | none                                                   | Decrease timewarp            |                               |
 | SetTimewarp       | speed (double), realtimePhysics (bool, optional), showMessage (bool, optional)          | Set timewarp speed directly  | 1000.0, false, true                  |
-| Wait              | mode (string: transfer/rendezvous, optional)      | Wait for transfer/rendezvous window | "rendezvous"/"transfer" |
+| Wait              | mode (string, optional), parameter (double, optional) | Wait for transfer/rendezvous window or specific angle | "transfer", null / "angle", 90.0 |
 | SetMainEngineOn   | on (bool), rocketIdOrName (string/int, optional)        | Main engine on/off           | true, 0                       |
 | SetOrbit          | radius, eccentricity, trueAnomaly, counterclockwise, planetCode, rocketIdOrName (string/int, optional) | Set orbit                | 7000000, 0, 0, true, "Earth", 0   |
 | DeleteRocket      | idOrName (string/int)                                   | Delete rocket                | 1                             |
@@ -75,7 +75,7 @@ All control APIs use `POST /control` with a JSON body:
 | WheelControl      | enable (bool, optional), turnAxis (float, required), rocketIdOrName (string/int, optional) | Control rover wheel direction | true, 0.5, "" |
 | SetMapIconColor   | rgbaValue (string), rocketIdOrName (string/int, optional) | Set rocket map icon color | "#FF0000", 0 |
 | CreateRocket      | planetCode (string), blueprintJson (string), rocketName (string, optional), x (double, optional), y (double, optional), vx (double, optional), vy (double, optional), vr (double, optional) | Create rocket from blueprint at specified location | "Earth", "{...}", "MyRocket", 0, 0, 0, 0, 0 |
-| CreateObject      | objectType (string), planetCode (string), x (double, optional), y (double, optional), objectName (string, optional), hidden (bool, optional), explosionSize (float, optional), createSound (bool, optional), createShake (bool, optional), rotation (float, optional), angularVelocity (float, optional), ragdoll (bool, optional), fuelPercent (double, optional), temperature (float, optional), flagDirection (int, optional), showFlagAnimation (bool, optional) | Create various objects with full parameter control | "astronaut", "Earth", 0, 0, "MyAstronaut", false, 2.0, true, true, 0, 0, false, 1.0, 293.15, 1, true |
+| CreateObject      | objectType (string), planetCode (string), x (double, optional), y (double, optional), objectName (string, optional), hidden (bool, optional), explosionSize (float, optional), createSound (bool, optional), createShake (bool, optional), rotation (float, optional), angularVelocity (float, optional), ragdoll (bool, optional), fuelPercent (double, optional), temperature (float, optional), flagDirection (int, optional), showFlagAnimation (bool, optional), createDamage (bool, optional) | Create various objects with full parameter control | "astronaut", "Earth", 0, 0, "MyAstronaut", false, 2.0, true, true, 0, 0, false, 1.0, 293.15, 1, true, true |
 | ShowToast         | toast (str)                                             | Show in-game toast message   | "Hello World!"                |
 | AddStage          | index (int), partIds (int[]), rocketIdOrName (string/int, optional) | Add stage to rocket      | 1, [0,1,2], 0                 |
 | RemoveStage       | index (int), rocketIdOrName (string/int, optional)      | Remove stage from rocket     | 1, 0                          |
@@ -91,19 +91,35 @@ All control APIs use `POST /control` with a JSON body:
 - All responses are JSON, containing a `result` field or detailed data.
 - Some parameters are optional; if omitted, the current player rocket is used.
 - **Important Note: When a parameter doesn't need a value, use empty string `""` instead of `null`!**
-- `Wait`'s mode param: "rendezvous" waits for rendezvous window, "transfer" (default) waits for transfer window.
-- `Rotate` supports multiple references:
-  - `"surface"`: Relative to planet surface reference frame (pointing to planet center)
-  - `"orbit"`: Relative to orbital velocity direction reference frame
-  - `""` (empty string) or other: Default to using the provided angle value
+- `Wait` method supports multiple modes:
+  - `"transfer"` (default): Wait for transfer window
+  - `"rendezvous"`: Wait for rendezvous window  
+  - Examples: `["transfer", null]`, `["rendezvous", null]`
+  - **Note**: Requires navigation target to be set first using `SetTarget`
+- `Rotate` method has been improved with more realistic physics:
+  - Uses SFS's original `GetStopRotationTurnAxis` logic for precise control
+  - Supports multiple references:
+    - `"surface"`: Relative to planet surface normal angle (terrain normal)
+    - `"orbit"`: Relative to orbital velocity direction reference frame
+    - `""` (empty string) or other: Default to using the provided angle value
   - Direction supports left/right/auto.
+  - Improved control strategy: proportional control for large errors, precise stop logic for small errors
 - `SetOrbit` param: counterclockwise true=CCW, false=CW.
+- `StopRotate` now supports optional coroutine control:
+  - `stopCoroutine` (optional): true = stop rotation and coroutines (default), false = stop rotation only
+  - Useful for temporary stops while keeping rotation coroutines running
 - `/other`'s `fuelBarGroups` field matches the lower-left UI fuel bars.
 - `/other`'s `transferWindowDeltaV` field is the transfer window ΔV, in m/s.
 - `/other`'s `timewarpSpeed` field is the current timewarp speed multiplier (e.g., 1.0 = real-time, 1000.0 = 1000x speed).
 - `/other`'s `mass` field is the total rocket mass, in tons.
 - `/other`'s `thrust` field is the current total thrust, in tons.
 - `/other`'s `TWR` field is the thrust-to-weight ratio.
+- `/other`'s `inertia` field contains detailed inertia information:
+  - `inertia`: Moment of inertia
+  - `angularVelocity`: Current angular velocity
+  - `angularDrag`: Angular drag coefficient
+  - `rotation`: Current rotation angle
+  - `centerOfMass`: Center of mass coordinates (x, y)
 - `QuicksaveManager` operations:
   - `"save"` (default): Save current game state with given name
   - `"load"`: Load quicksave with given name
@@ -137,9 +153,10 @@ All control APIs use `POST /control` with a JSON body:
   - `x`, `y` (optional): Position coordinates relative to planet center (default: 0, 0)
   - `objectName` (optional): Custom name for the object (default: auto-generated name)
   - `hidden` (optional): Whether to create the object as hidden/inactive (default: false)
-  - `explosionSize` (optional): Size/strength of explosion effect (default: 2.0, only for explosion type)
-  - `createSound` (optional): Whether to create explosion sound (default: true, only for explosion type)
+  - `explosionSize` (optional): Size/strength of explosion effect (default: 2.0, only for explosion type). **This now controls REAL part destruction radius - explosionSize × 5 = damage radius**
+- `createSound` (optional): Whether to create explosion sound (default: true, only for explosion type)
   - `createShake` (optional): Whether to create camera shake effect (default: true, only for explosion type)
+  - `createDamage` (optional): Whether to cause actual part damage (default: true, only for explosion type). **Set to false for visual-only explosions**
   - `rotation` (optional): Initial rotation in degrees (default: 0, mainly for astronaut)
   - `angularVelocity` (optional): Initial angular velocity (default: 0, mainly for astronaut)
   - `ragdoll` (optional): Whether astronaut starts in ragdoll state (default: false, only for astronaut)
@@ -150,13 +167,11 @@ All control APIs use `POST /control` with a JSON body:
   - Supported object types:
     - `"astronaut"`, `"eva"`: Astronaut in EVA state with full physics control
     - `"flag"`: Flag objects with direction and animation control
-    - `"explosion"`, `"explosionparticle"`: Explosion effects using original game system
-    - `"mapicon"`: Map icons (similar to rocket icons)
+    - `"explosion"`, `"explosionparticle"`: **Configurable explosions** - Creates visual effects and optionally destroys/disconnects rocket parts within the explosion radius. Use `createDamage` parameter to control whether parts are actually damaged (true) or just visual effects (false).
 - `Revert` parameters:
   - `"launch"`: Revert to launch state
   - `"30s"`: Revert to 30 seconds ago
   - `"3min"`: Revert to 3 minutes ago
-  - **Note: Revert does not support returning to build scene**
 
 ---
 
@@ -174,6 +189,20 @@ curl -X POST http://127.0.0.1:27772/control \
 
 ```bash
 curl http://127.0.0.1:27772/other
+```
+
+## Example: Wait for Specific Angle
+
+```bash
+# Wait for 90 degrees
+curl -X POST http://127.0.0.1:27772/control \
+  -H "Content-Type: application/json" \
+  -d '{"method":"Wait","args":["angle", 90.0]}'
+
+# Wait for transfer window
+curl -X POST http://127.0.0.1:27772/control \
+  -H "Content-Type: application/json" \
+  -d '{"method":"Wait","args":["transfer", null]}'
 ```
 
 ---

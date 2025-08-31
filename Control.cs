@@ -61,7 +61,7 @@ namespace SFSControl
             return "Error: Not in world scene or rocket/throttle not available";
         }
 
-    // 开关RCS
+        // 开关RCS
         public static string SetRCS(bool on, string rocketIdOrName = null)
         {
             var rocket = FindRocket(rocketIdOrName);
@@ -102,15 +102,23 @@ namespace SFSControl
         }
         
         // 停止当前旋转
-        public static string StopRotate(string rocketIdOrName = null)
+        public static string StopRotate(string rocketIdOrName = null, bool stopCoroutine = true)
         {
             var rocket = FindRocket(rocketIdOrName);
             if (rocket == null || rocket.arrowkeys == null || rocket.rb2d == null)
                 return "Error: Not in world scene or rocket/arrowkeys/rb2d not available";
+            
             rocket.arrowkeys.turnAxis.Value = 0f;      // 停止输入
             rocket.rb2d.angularVelocity = 0f;          // 清零角速度
-                return "Success";
+            
+            // 停止旋转协程
+            if (stopCoroutine)
+            {
+                ControlCoroutineRunner.Instance.StopAllCoroutines();
             }
+            
+            return "Success";
+        }
         
         // 合并旋转方法
         public static string Rotate(bool isTarget = false, float angle = 0, string reference = null, string direction = null, string rocketIdOrName = null)
@@ -126,12 +134,19 @@ namespace SFSControl
                 // 参考系处理
                 if (reference == "surface")
                 {
-                    targetAngle = Mathf.Atan2((float)rocket.location.position.Value.y, (float)rocket.location.position.Value.x) * Mathf.Rad2Deg;
+                    // 使用星球表面的法线角度
+                    var planet = rocket.location.planet.Value;
+                    var position = rocket.location.position.Value;
+                    var terrainNormal = planet.GetTerrainNormal(position);
+                    var surfaceAngle = terrainNormal.AngleDegrees;
+                    
+                    // 将提供的角度转换为相对于地面法线的角度
+                    targetAngle = (float)(surfaceAngle + angle);
                 }
                 else if (reference == "orbit")
                 {
                     var v = rocket.location.velocity.Value;
-                    if (v.magnitude < 0.1)// 速度太低，无法计算轨道方向
+                    if ((float)v.magnitude < 0.1f)// 速度太低，无法计算轨道方向
                         return "Error: Velocity too low for orbit reference";
                     targetAngle = Mathf.Atan2((float)v.y, (float)v.x) * Mathf.Rad2Deg;
                 }
@@ -158,6 +173,7 @@ namespace SFSControl
             float timeout = 60f; // 超时时间
             float elapsed = 0f;
             float error;
+            
             do
             {
                 float current = (rocket.rb2d.rotation % 360f + 360f) % 360f;
@@ -176,28 +192,31 @@ namespace SFSControl
                     yield break;
                 }
                 
-                // 计算可用扭矩和惯性
+                // 获取可用扭矩
                 float torque = (float)typeof(Rocket).GetMethod("GetTorque", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(rocket, null);
-                float mass = rocket.rb2d.mass;
-                // 质量大于200吨时，扭矩按质量衰减
-                if (mass > 200f)
-                    torque /= Mathf.Pow(mass / 200f, 0.35f);
-                float maxAcc = torque * Mathf.Rad2Deg / mass;
-                float angVel = rocket.rb2d.angularVelocity;
-                float stopTime = Mathf.Abs(angVel / maxAcc);
-                float curTime = Mathf.Abs(error / (angVel == 0 ? 1e-3f : angVel));
-
-                // 判断是否需要减速
-                float turnInput;
-                if (stopTime > curTime)
+                
+                // 计算停止旋转所需的输入
+                float stopRotationInput = GetStopRotationTurnAxis(rocket, torque);
+                
+                // 计算目标角速度
+                float targetAngularVelocity = -error * 2f; // 比例控制
+                float currentAngularVelocity = rocket.rb2d.angularVelocity;
+                float angularVelocityError = targetAngularVelocity - currentAngularVelocity;
+                
+                // 计算输入
+                float turnInput = 0f;
+                
+                if (Mathf.Abs(error) > 5f) // 误差较大时，使用比例控制
                 {
-                    turnInput = Mathf.Sign(angVel); // 继续当前方向
+                    turnInput = Mathf.Sign(-error) * Mathf.Clamp(Mathf.Abs(error) / 30f, 0.1f, 1.0f);
                 }
-                else
+                else // 误差较小时，使用停止旋转逻辑
                 {
-                    turnInput = -Mathf.Sign(error); // 反向减速
+                    turnInput = stopRotationInput;
                 }
-                rocket.arrowkeys.turnAxis.Value = turnInput * Mathf.Clamp(Mathf.Abs(error) / 30f, 0.1f, 1.0f);
+                
+                // 应用输入
+                rocket.arrowkeys.turnAxis.Value = turnInput;
 
                 yield return new WaitForFixedUpdate();
                 elapsed += Time.fixedDeltaTime;
@@ -206,7 +225,21 @@ namespace SFSControl
             // 超时保护
             rocket.arrowkeys.turnAxis.Value = 0f;
             rocket.rb2d.angularVelocity = 0f;
-            Debug.Log("Rotation timed out.");
+            //Debug.Log("Rotation timed out.");
+        }
+        
+        // 模拟GetStopRotationTurnAxis方法
+        private static float GetStopRotationTurnAxis(Rocket rocket, float torque)
+        {
+            float angularVelocity = rocket.rb2d.angularVelocity;
+            float angularAcceleration = torque * 57.29578f / rocket.rb2d.mass * Time.fixedDeltaTime;
+            
+            if (angularAcceleration == 0f)
+            {
+                return 0f;
+            }
+            
+            return Mathf.Clamp(angularVelocity / angularAcceleration, -1f, 1f);
         }
 
         // 使用部件
@@ -577,7 +610,7 @@ namespace SFSControl
 
         // 自动等待到转移窗口、交会窗口或遭遇窗口
         // mode: "transfer"（转移窗口）、"rendezvous"（交会窗口）
-        public static string WaitForWindow(string mode = "transfer")
+        public static string WaitForWindow(string mode = "transfer", double? parameter = null)
         {
             var timewarpTo = UnityEngine.Object.FindObjectOfType(Type.GetType("SFS.World.Maps.TimewarpTo, Assembly-CSharp"));
             if (timewarpTo == null)
@@ -588,39 +621,63 @@ namespace SFSControl
             if (mapNav == null)
                 return "Error: MapNavigation not available";
 
+            // 检查是否有导航目标
+            var navTarget = SFS.World.Maps.Map.navigation?.target;
+            if (navTarget == null)
+                return "Error: No navigation target set. Use SetTarget first.";
+
             var windowField = mapNavType.GetField("window");
             var window = windowField.GetValue(mapNav);
             var windowType = window.GetType();
             bool hasFutureWindow = (bool)windowType.GetField("Item1").GetValue(window);
+            Location windowLocation = (Location)windowType.GetField("Item2").GetValue(window);
             bool planetWindow = (bool)windowType.GetField("Item4").GetValue(window);
 
-            // 交会窗口判定：hasFutureWindow==true 且 planetWindow==true
-            // 转移窗口判定：hasFutureWindow==true 且 planetWindow==false
+            // 处理不同的等待模式
             if (mode == "rendezvous")
             {
+                // 交会窗口判定：hasFutureWindow==true 且 planetWindow==true
                 if (!hasFutureWindow || !planetWindow)
                     return "Error: No rendezvous window available";
             }
             else // transfer (默认)
             {
+                // 转移窗口判定：hasFutureWindow==true 且 planetWindow==false
                 if (!hasFutureWindow || planetWindow)
                     return "Error: No transfer window available";
             }
 
             try
             {
+                // 获取转移窗口的时间
+                double windowTime = windowLocation.time;
+                double currentTime = SFS.World.WorldTime.main.worldTime;
+                double timeToWait = windowTime - currentTime;
+                
+                if (timeToWait <= 0)
+                {
+                    return "Success: Transfer window is already available";
+                }
+
                 var type = timewarpTo.GetType();
                 var selectType = type.GetNestedType("Select_TransferWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                 var selectInstance = Activator.CreateInstance(selectType);
                 
-                // 设置 planetWindow 字段来区分转移窗口和交会窗口
-                var planetWindowField = selectType.GetField("planetWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (planetWindowField != null)
+                // 设置目标
+                var targetField = selectType.GetField("target", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (targetField != null)
                 {
-                    planetWindowField.SetValue(selectInstance, mode == "rendezvous");
+                    var currentNavTarget = SFS.World.Maps.Map.navigation?.target;
+                    if (currentNavTarget != null)
+                    {
+                        targetField.SetValue(selectInstance, currentNavTarget);
+                    }
                 }
                 
+                // 设置选择的对象
                 type.GetField("selected", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public).SetValue(timewarpTo, selectInstance);
+                
+                // 开始时间加速
                 type.GetMethod("StartTimewarp", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public).Invoke(timewarpTo, null);
                 return "Success";
             }
@@ -1520,6 +1577,26 @@ namespace SFSControl
                 rocket.physics.SetLocationAndState(location, false);
                 rocket.rb2d.angularVelocity = (float)vr;
 
+                // 初始化火箭的统计信息和任务日志系统
+                if (rocket.stats != null)
+                {
+                    try
+                    {
+                        // 为火箭创建新的日志分支
+                        int newBranch;
+                        SFS.Stats.LogManager.main.CreateRoot(out newBranch);
+                        
+                        // 初始化统计记录器
+                        rocket.stats.Load(newBranch);
+                        
+                        Debug.Log($"[Control] CreateRocket: Initialized rocket stats with branch {newBranch}");
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogWarning($"[Control] CreateRocket: Failed to initialize rocket stats: {ex.Message}");
+                    }
+                }
+
                 //Debug.Log($"[Control] CreateRocket: Successfully created rocket '{rocket.rocketName}' at planet '{planetCode}' position ({x}, {y}) with velocity ({vx}, {vy}) and angular velocity {vr}");
                 return $"Success: Created rocket '{rocket.rocketName}' with ID {GameManager.main.rockets.Count - 1}";
             }
@@ -1530,11 +1607,11 @@ namespace SFSControl
             }
         }
 
-        // 创建各种游戏对象（宇航员、旗子、爆炸效果、地图图标等）
+        // 创建各种对象（宇航员、旗子、爆炸效果、地图图标等）
         public static string CreateObject(string objectType, string planetCode, double x = 0, double y = 0, string objectName = "", bool hidden = false, 
             float explosionSize = 2.0f, bool createSound = true, bool createShake = true,
             float rotation = 0f, float angularVelocity = 0f, bool ragdoll = false, double fuelPercent = 1.0, float temperature = 293.15f,
-            int flagDirection = 1, bool showFlagAnimation = true)
+            int flagDirection = 1, bool showFlagAnimation = true, bool createDamage = true)
         {
             try
             {
@@ -1582,6 +1659,61 @@ namespace SFSControl
                                 new Location(planet, new Double2(x, y), Double2.zero),
                                 rotation, angularVelocity, ragdoll, fuelPercent, temperature
                             );
+                            
+                            // 初始化宇航员的统计信息，避免任务日志显示异常
+                            if (astronaut.stats != null)
+                            {
+                                try
+                                {
+                                    // 为宇航员创建新的日志分支
+                                    int newBranch;
+                                    SFS.Stats.LogManager.main.CreateRoot(out newBranch);
+                                    
+                                    // 初始化统计记录器
+                                    astronaut.stats.Load(newBranch);
+                                }
+                                catch (System.Exception ex)
+                                {
+                                    Debug.LogWarning($"[Control] CreateObject: Failed to initialize astronaut stats: {ex.Message}");
+                                }
+                            }
+                            
+                            // 确保宇航员处于物理模式并与地形碰撞
+                            if (astronaut.physics != null)
+                            {
+                                // 设置为物理模式
+                                astronaut.physics.PhysicsMode = true;
+                                
+                                // 确保Rigidbody2D启用
+                                if (astronaut.rb2d != null)
+                                {
+                                    astronaut.rb2d.simulated = true;
+                                    astronaut.rb2d.velocity = Vector2.zero;
+                                    astronaut.rb2d.angularVelocity = angularVelocity;
+                                }
+                                
+                                // 确保碰撞器启用
+                                Collider2D[] colliders = astronaut.GetComponentsInChildren<Collider2D>();
+                                foreach (var collider in colliders)
+                                {
+                                    collider.enabled = true;
+                                }
+                                
+                                // 设置正确的层级以与地形碰撞
+                                astronaut.gameObject.layer = LayerMask.NameToLayer("Astronaut");
+                                
+                                // 确保宇航员在正确的位置
+                                Vector2 planetPosition = new Vector2((float)x, (float)y);
+                                Vector3 globalPosition = planet.transform.position + new Vector3(planetPosition.x, planetPosition.y, 0f);
+                                astronaut.transform.position = globalPosition;
+                                
+                                // 强制更新物理状态
+                                astronaut.physics.SetLocationAndState(
+                                    new Location(planet, new Double2(x, y), Double2.zero), 
+                                    true  // 设置为物理模式
+                                );
+                            }
+                            
                             createdObject = astronaut.gameObject;
                             resultMessage = $"astronaut EVA (rotation: {rotation}, angularVel: {angularVelocity}, ragdoll: {ragdoll}, fuel: {fuelPercent:P0}, temp: {temperature}K)";
                         }
@@ -1629,12 +1761,13 @@ namespace SFSControl
 
                     case "explosion":
                     case "explosionparticle":
-                        // 使用原版爆炸效果系统
-                        // 计算爆炸位置
+                        // 直接执行真正的零件爆炸，不创建临时对象
+                        // 输入：火箭的SFS坐标 (x, y)
+                        // 需要转换为Unity世界坐标
                         Vector3 explosionPosition = new Vector3((float)x, (float)y, 0f);
-                        Vector3 explosionGlobalPosition = planet.transform.position + explosionPosition;
+                        Vector3 explosionGlobalPosition = planet.transform.position + explosionPosition; // 星球位置 + 火箭相对坐标 = Unity世界坐标
                         
-                        // 根据参数决定如何创建爆炸效果
+                        // 创建爆炸视觉效果
                         if (!createSound)
                         {
                             // 使用反射访问EffectManager.main.explosionPrefab
@@ -1658,41 +1791,27 @@ namespace SFSControl
                             EffectManager.CreateExplosion(explosionGlobalPosition, explosionSize);
                         }
                         
-                        resultMessage = $"explosion effect (size: {explosionSize}, sound: {createSound}, shake: {createShake})";
-                        break;
-
-                    case "mapicon":
-                        // 创建地图图标（类似火箭图标）
-                        createdObject = new GameObject(string.IsNullOrEmpty(objectName) ? "MapIcon" : objectName);
+                        // 根据参数决定是否执行零件爆炸逻辑
+                        string explosionResult = "";
+                        if (createDamage)
+                        {
+                            explosionResult = ExecutePartExplosion(explosionGlobalPosition, explosionSize, createShake);
+                        }
+                        else
+                        {
+                            explosionResult = "Visual effect only - no damage";
+                        }
                         
-                        // 添加MapIcon组件
-                        var mapIcon = createdObject.AddComponent<MapIcon>();
-                        // 设置WorldLocation的Value属性
-                        mapIcon.location.Value = new Location(planet, new Double2(x, y), Double2.zero);
-                        mapIcon.shake = 0f;
+                        // 创建一个简单的标记对象来表示爆炸已发生
+                        createdObject = new GameObject(string.IsNullOrEmpty(objectName) ? "ExplosionMarker" : objectName);
+                        createdObject.transform.position = explosionGlobalPosition;
                         
-                        // 创建图标GameObject
-                        var iconObject = new GameObject("Icon");
-                        iconObject.transform.SetParent(createdObject.transform);
-                        
-                        // 添加SpriteRenderer组件
-                        var spriteRenderer = iconObject.AddComponent<SpriteRenderer>();
-                        spriteRenderer.sprite = CreateDefaultSprite();
-                        spriteRenderer.color = Color.white;
-                        spriteRenderer.sortingOrder = 100;
-                        
-                        // 设置图标大小
-                        iconObject.transform.localScale = Vector3.one * 0.01f;
-                        
-                        // 设置MapIcon的mapIcon引用
-                        mapIcon.mapIcon = iconObject;
-                        
-                        resultMessage = "map icon";
+                        resultMessage = $"explosion (size: {explosionSize}, sound: {createSound}, shake: {createShake}, damage: {createDamage}) - {explosionResult}";
                         break;
 
                     default:
                         Debug.LogError($"[Control] CreateObject: Unknown object type '{objectType}'");
-                        return $"Error: Unknown object type '{objectType}'. Supported types: astronaut/eva, flag, explosion/explosionparticle, mapicon";
+                        return $"Error: Unknown object type '{objectType}'. Supported types: astronaut/eva, flag, explosion/explosionparticle";
                 }
 
                 if (createdObject == null)
@@ -1702,9 +1821,9 @@ namespace SFSControl
                 }
 
                 // 设置对象位置
-                Vector2 planetPosition = new Vector2((float)x, (float)y);
-                Vector3 globalPosition = planet.transform.position + new Vector3(planetPosition.x, planetPosition.y, 0f);
-                createdObject.transform.position = globalPosition;
+                Vector2 objectPlanetPosition = new Vector2((float)x, (float)y);
+                Vector3 objectGlobalPosition = planet.transform.position + new Vector3(objectPlanetPosition.x, objectPlanetPosition.y, 0f);
+                createdObject.transform.position = objectGlobalPosition;
 
                 // 设置对象名称
                 if (!string.IsNullOrEmpty(objectName))
@@ -1724,7 +1843,7 @@ namespace SFSControl
                     createdObject.transform.SetParent(planet.transform);
                 }
 
-                Debug.Log($"[Control] CreateObject: Successfully created {resultMessage} '{createdObject.name}' at planet '{planetCode}' position ({x}, {y})");
+
                 return $"Success: Created {resultMessage} '{createdObject.name}' with ID {createdObject.GetInstanceID()}";
             }
             catch (System.Exception ex)
@@ -1734,37 +1853,187 @@ namespace SFSControl
             }
         }
 
-        // 创建默认图标的辅助方法
-        private static Sprite CreateDefaultSprite()
+        private static string ExecutePartExplosion(Vector3 explosionPosition, float explosionSize, bool createShake)
         {
-            // 创建一个简单的圆形图标
-            int size = 32;
-            Texture2D texture = new Texture2D(size, size);
-            Color[] pixels = new Color[size * size];
-            
-            Vector2 center = new Vector2(size / 2f, size / 2f);
-            float radius = size / 2f;
-            
-            for (int y = 0; y < size; y++)
+            try
             {
-                for (int x = 0; x < size; x++)
+                if (GameManager.main?.rockets == null)
                 {
-                    float distance = Vector2.Distance(new Vector2(x, y), center);
-                    if (distance <= radius)
+                    Debug.LogWarning("[Control] ExecutePartExplosion: No rockets available for explosion effects");
+                    return "No rockets available";
+                }
+
+                // 计算爆炸影响范围（基于爆炸大小）
+                float explosionRadius = explosionSize * 5f; // 爆炸大小 * 5 = 影响半径
+                
+
+
+                // 遍历所有火箭，检查是否有零件在爆炸范围内
+                var rocketsToProcess = new List<SFS.World.Rocket>(GameManager.main.rockets);
+                
+                int rocketsAffected = 0;
+                int partsDestroyed = 0;
+                int partsDisconnected = 0;
+                
+                foreach (var rocket in rocketsToProcess)
+                {
+                    if (rocket == null || rocket.partHolder?.parts == null) continue;
+
+                    // 检查火箭是否在爆炸范围内
+                    float distanceToExplosion = Vector3.Distance(rocket.transform.position, explosionPosition);
+                    
+                    if (distanceToExplosion <= explosionRadius)
                     {
-                        pixels[y * size + x] = Color.white;
-                    }
-                    else
-                    {
-                        pixels[y * size + x] = Color.clear;
+
+                        
+                        // 处理火箭的零件爆炸
+                        var result = ProcessRocketExplosion(rocket, explosionPosition, explosionRadius, distanceToExplosion);
+                        rocketsAffected++;
+                        partsDestroyed += result.partsDestroyed;
+                        partsDisconnected += result.partsDisconnected;
                     }
                 }
+                
+                return $"Affected {rocketsAffected} rockets, destroyed {partsDestroyed} parts, disconnected {partsDisconnected} parts";
             }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] ExecutePartExplosion error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        // 处理火箭的零件爆炸
+        private static (int partsDestroyed, int partsDisconnected) ProcessRocketExplosion(SFS.World.Rocket rocket, Vector3 explosionPosition, float explosionRadius, float distanceToExplosion)
+        {
+            try
+            {
+                if (rocket?.partHolder?.parts == null) return (0, 0);
+
+                var partsToDestroy = new List<SFS.Parts.Part>();
+                var partsToDisconnect = new List<SFS.Parts.Part>();
+
+                // 遍历火箭的所有零件
+                foreach (var part in rocket.partHolder.parts)
+                {
+                    if (part == null) continue;
+
+                    // 计算零件到爆炸中心的距离
+                    float partDistance = Vector3.Distance(part.transform.position, explosionPosition);
+                    
+                    if (partDistance <= explosionRadius)
+                    {
+                        // 根据距离和爆炸大小计算破坏概率
+                        float damageProbability = CalculateExplosionDamage(partDistance, explosionRadius, part.mass.Value);
+                        
+                        if (UnityEngine.Random.Range(0f, 1f) < damageProbability)
+                        {
+                            // 零件将被摧毁
+                            partsToDestroy.Add(part);
+                            //Debug.Log($"[Control] ProcessRocketExplosion: Part '{part.name}' will be destroyed (distance: {partDistance:F2}, probability: {damageProbability:F2})");
+                        }
+                        else if (damageProbability > 0.3f) // 中等伤害概率
+                        {
+                            // 零件将被断开连接
+                            partsToDisconnect.Add(part);
+                            //Debug.Log($"[Control] ProcessRocketExplosion: Part '{part.name}' will be disconnected (distance: {partDistance:F2}, probability: {damageProbability:F2})");
+                        }
+                    }
+                }
+
+                // 执行零件摧毁
+                foreach (var part in partsToDestroy)
+                {
+                    try
+                    {
+                        // 在零件位置创建额外的爆炸效果
+                        Vector3 partExplosionPos = part.transform.position;
+                        float partExplosionSize = Mathf.Max(0.5f, part.mass.Value * 0.5f);
+                        
+                        // 创建零件爆炸效果
+                        EffectManager.CreateExplosion(partExplosionPos, partExplosionSize);
+                        
+                        // 摧毁零件
+                        part.DestroyPart(true, true, SFS.World.DestructionReason.TerrainCollision);
+                        
+
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogError($"[Control] ProcessRocketExplosion: Failed to destroy part '{part.name}': {ex.Message}");
+                    }
+                }
+
+                // 执行零件断开连接
+                foreach (var part in partsToDisconnect)
+                {
+                    try
+                    {
+                        // 尝试断开零件的连接
+                        var connectedJoints = rocket.jointsGroup.GetConnectedJoints(part);
+                        
+                        if (connectedJoints.Count > 0)
+                        {
+                            // 断开第一个连接
+                            bool split;
+                            SFS.World.Rocket newRocket;
+                            SFS.World.JointGroup.DestroyJoint(connectedJoints[0], rocket, out split, out newRocket);
+                            
+                            if (split && newRocket != null)
+                            {
+                                // 启用碰撞免疫，防止立即碰撞
+                                rocket.EnableCollisionImmunity(1.5f);
+                                newRocket.EnableCollisionImmunity(1.5f);
+                                
+                                // 如果原火箭是玩家控制的，设置新的控制目标
+                                if (rocket.isPlayer)
+                                {
+                                    SFS.World.Rocket.SetPlayerToBestControllable(new SFS.World.Rocket[] { rocket, newRocket });
+                                }
+                                
+
+                            }
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogError($"[Control] ProcessRocketExplosion: Failed to disconnect part '{part.name}': {ex.Message}");
+                    }
+                }
+
+                // 如果火箭没有零件了，摧毁火箭
+                if (rocket.partHolder.parts.Count == 0)
+                {
+
+                    SFS.World.RocketManager.DestroyRocket(rocket, SFS.World.DestructionReason.TerrainCollision);
+                }
+                
+                return (partsToDestroy.Count, partsToDisconnect.Count);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] ProcessRocketExplosion error: {ex.Message}");
+                return (0, 0);
+            }
+        }
+
+        // 计算爆炸伤害概率
+        private static float CalculateExplosionDamage(float distance, float explosionRadius, float partMass)
+        {
+            // 基础破坏概率：距离越近，概率越高
+            float baseProbability = 1f - (distance / explosionRadius);
             
-            texture.SetPixels(pixels);
-            texture.Apply();
+            // 质量因子：质量越大的零件越难被摧毁
+            float massFactor = Mathf.Clamp01(1f - (partMass / 10f)); // 假设10是最大质量
             
-            return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+            // 随机因子：增加一些随机性
+            float randomFactor = UnityEngine.Random.Range(0.8f, 1.2f);
+            
+            // 最终概率
+            float finalProbability = baseProbability * massFactor * randomFactor;
+            
+            // 确保概率在合理范围内
+            return Mathf.Clamp01(finalProbability);
         }
 
         // 修改火箭地图图标的RGBA值
@@ -1844,6 +2113,18 @@ namespace SFSControl
 
                 // 应用新颜色
                 spriteRenderer.color = newColor;
+
+                // 保存用户设置的颜色到补丁系统中，防止缩放时被重置为白色
+                var patchType = Type.GetType("SFSControl.Patch_MapIcon_UpdateAlpha, SFSControl");
+                if (patchType != null)
+                {
+                    var setUserColorMethod = patchType.GetMethod("SetUserColor", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (setUserColorMethod != null)
+                    {
+                        // 保存完整的RGBA值，包括透明度
+                        setUserColorMethod.Invoke(null, new object[] { spriteRenderer, newColor, true });
+                    }
+                }
 
                 //Debug.Log($"[Control] SetMapIconColor: Successfully set map icon color to RGBA({newColor.r:F3}, {newColor.g:F3}, {newColor.b:F3}, {newColor.a:F3}) for rocket '{rocket.rocketName ?? rocketIdOrName}'");
                 return $"Success: Map icon color set to RGBA({newColor.r:F3}, {newColor.g:F3}, {newColor.b:F3}, {newColor.a:F3})";

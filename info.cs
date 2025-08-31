@@ -17,7 +17,7 @@ namespace SFSControl
 {
     public static class Info
     {
-        // 获取当前玩家控制的火箭的详细信息
+        // 获取当前火箭的详细信息
         public static Dictionary<string, object> GetRocketInfo(string rocketIdOrName = null)
         {
             Rocket rocket = null;
@@ -150,7 +150,7 @@ namespace SFSControl
             };
         }
 
-        // 获取当前玩家所处星球的详细信息
+        // 获取当前所处星球的详细信息
         public static Dictionary<string, object> GetCurrentPlanetInfo(string codename = null)
         {
             Planet planet = null;
@@ -172,7 +172,7 @@ namespace SFSControl
             return GetPlanetInfoDict(planet);
         }
 
-        // 获取所有星球的详细信息列表
+        // 获取所有星球的信息列表
         public static List<Dictionary<string, object>> GetAllPlanetsInfo()
         {
             var list = new List<Dictionary<string, object>>();
@@ -314,7 +314,7 @@ namespace SFSControl
                 sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
             } catch { sceneName = null; }
 
-            // 获取窗口ΔV（兼容目标为星球或火箭，目标火箭视为一个星球）
+            // 获取窗口ΔV（使用原版逻辑）
             double? transferWindowDeltaV = null;
             try {
                 Planet targetPlanet = null;
@@ -347,13 +347,21 @@ namespace SFSControl
                     var targetOrbit = targetPlanet.orbit;
                     double tolerance = 1000;
                     bool crossing;
-                    // 如果目标是火箭，location参数用目标火箭的location
+                    
                     var hohmann = SFS.Navigation.Basic.GetHohmanTransfer(targetLocation ?? location, fromOrbit, targetOrbit, tolerance, out crossing);
                     if (hohmann != null)
                     {
-                        double v_departure = hohmann.GetLocation(hohmann.orbitStartTime).velocity.magnitude;
-                        double v_current = (targetLocation ?? location).velocity.magnitude;
-                        transferWindowDeltaV = v_departure - v_current;
+                        // 获取霍曼转移轨道的出发位置
+                        var departureLocation = hohmann.GetLocation(hohmann.orbitStartTime);
+                        
+                        // 计算当前速度
+                        var currentVelocity = (targetLocation ?? location).velocity.magnitude;
+                        
+                        // 计算出发速度
+                        var departureVelocity = departureLocation.velocity.magnitude;
+                        
+                        // 计算ΔV
+                        transferWindowDeltaV = departureVelocity - currentVelocity;
                     }
                 }
             } catch { transferWindowDeltaV = null; }
@@ -409,6 +417,23 @@ namespace SFSControl
                     twr = thrust.Value / mass.Value;
             } catch { twr = null; }
 
+            // 获取转动惯量相关信息
+            Dictionary<string, object> inertiaInfo = null;
+            try {
+                if (rocket?.rb2d != null)
+                {
+                    var rb2d = rocket.rb2d;
+                    inertiaInfo = new Dictionary<string, object>
+                    {
+                        { "inertia", rb2d.inertia },
+                        { "angularVelocity", rb2d.angularVelocity },
+                        { "angularDrag", rb2d.angularDrag },
+                        { "rotation", rb2d.rotation },
+                        { "centerOfMass", new { x = rb2d.centerOfMass.x, y = rb2d.centerOfMass.y } }
+                    };
+                }
+            } catch { inertiaInfo = null; }
+
             return new Dictionary<string, object>
             {
                 { "targetAngle", targetAngle },
@@ -422,7 +447,8 @@ namespace SFSControl
                 { "fuelBarGroups", fuelBarGroups },
                 { "mass", mass },
                 { "thrust", thrust },
-                { "TWR", twr }
+                { "TWR", twr },
+                { "inertia", inertiaInfo }
             };
         }
 
@@ -499,7 +525,7 @@ namespace SFSControl
             return null;
         }
 
-        // 获取当前建造场景的蓝图信息（JSON字符串）
+        // 获取当前建造场景的蓝图信息（JSON）
         public static string GetCurrentBlueprint()
         {
             // 只有在建造场景下才有效
@@ -519,7 +545,7 @@ namespace SFSControl
             }
         }
 
-        // 获取每一级的所有资源类型剩余量，分级返回
+        // 获取每一级的所有资源类型剩余量
         public static List<Dictionary<string, object>> GetStagesFuel(Rocket rocket)
         {
             var result = new List<Dictionary<string, object>>();
@@ -605,7 +631,7 @@ namespace SFSControl
             return queue.Reverse().Take(maxLines).Reverse().ToList();
         }
 
-        // 获取SFS窗口的截图 - 使用SFS自带的ImageTools
+        // 获取SFS窗口的截图
         public static byte[] CaptureSFSWindow()
         {
             try
