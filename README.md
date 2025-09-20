@@ -19,7 +19,7 @@ This project is an automation/remote control/information API server for SFS (Spa
 | `/rockets`          | None                                                                       | Get a list of all rockets in the scene (save info)               | `/rockets`                                                     |
 | `/planet`           | `codename` (string, optional)                                              | Get detailed info of the specified planet (default: current)     | `/planet?codename=Moon`                                        |
 | `/planets`          | None                                                                       | Get detailed info for all planets                                | `/planets`                                                     |
-| `/other`            | `rocketIdOrName` (string/int, optional)                                    | Get miscellaneous info (window ΔV, fuel bars, nav target, mass, thrust, TWR, inertia, etc.)  | `/other?rocketIdOrName=1`                                      |
+| `/other`            | `rocketIdOrName` (string/int, optional)                                    | Get miscellaneous info (window ΔV, fuel bars, nav target, mass, thrust, maxThrust, TWR, inertia, etc.)  | `/other?rocketIdOrName=1`                                      |
 | `/rocket`           | `rocketIdOrName` (string/int, optional)                                    | Get the save info of a specific rocket (default: current)        | `/rocket?rocketIdOrName=1`                                     |
 | `/debuglog`         | None                                                                       | Get the game console log                                         | `/debuglog`                                                    |
 | `/mission`          | None                                                                       | Get current mission status and mission log                       | `/mission`                                                     |
@@ -74,6 +74,9 @@ All control APIs use `POST /control` with a JSON body:
 | QuicksaveManager  | operation (str, optional), name (str)                    | Manage quicksaves (save/load/delete/rename)  | "save", "MySave"              |
 | WheelControl      | enable (bool, optional), turnAxis (float, required), rocketIdOrName (string/int, optional) | Control rover wheel direction | true, 0.5, "" |
 | SetMapIconColor   | rgbaValue (string), rocketIdOrName (string/int, optional) | Set rocket map icon color | "#FF0000", 0 |
+| SetEngineGimbal   | partId (int), gimbalAngle (float), rocketIdOrName (string/int, optional) | Set engine gimbal angle (-1 to 1) | 0, 0.5, 0 |
+| SetEngineGimbalOn | partId (int), gimbalOn (bool), rocketIdOrName (string/int, optional) | Enable/disable engine gimbal | 0, true, 0 |
+| GetEngineGimbalInfo | partId (int), rocketIdOrName (string/int, optional) | Get engine gimbal information | 0, 0 |
 | CreateRocket      | planetCode (string), blueprintJson (string), rocketName (string, optional), x (double, optional), y (double, optional), vx (double, optional), vy (double, optional), vr (double, optional) | Create rocket from blueprint at specified location | "Earth", "{...}", "MyRocket", 0, 0, 0, 0, 0 |
 | CreateObject      | objectType (string), planetCode (string), x (double, optional), y (double, optional), objectName (string, optional), hidden (bool, optional), explosionSize (float, optional), createSound (bool, optional), createShake (bool, optional), rotation (float, optional), angularVelocity (float, optional), ragdoll (bool, optional), fuelPercent (double, optional), temperature (float, optional), flagDirection (int, optional), showFlagAnimation (bool, optional), createDamage (bool, optional) | Create various objects with full parameter control | "astronaut", "Earth", 0, 0, "MyAstronaut", false, 2.0, true, true, 0, 0, false, 1.0, 293.15, 1, true, true |
 | ShowToast         | toast (str)                                             | Show in-game toast message   | "Hello World!"                |
@@ -113,6 +116,7 @@ All control APIs use `POST /control` with a JSON body:
 - `/other`'s `timewarpSpeed` field is the current timewarp speed multiplier (e.g., 1.0 = real-time, 1000.0 = 1000x speed).
 - `/other`'s `mass` field is the total rocket mass, in tons.
 - `/other`'s `thrust` field is the current total thrust, in tons.
+- `/other`'s `maxThrust` field is the maximum possible thrust (at 100% throttle), in tons.
 - `/other`'s `TWR` field is the thrust-to-weight ratio.
 - `/other`'s `inertia` field contains detailed inertia information:
   - `inertia`: Moment of inertia
@@ -120,6 +124,24 @@ All control APIs use `POST /control` with a JSON body:
   - `angularDrag`: Angular drag coefficient
   - `rotation`: Current rotation angle
   - `centerOfMass`: Center of mass coordinates (x, y)
+- `/other` includes orbital information:
+  - `distToApoapsis`: Distance to apoapsis in meters
+  - `distToPeriapsis`: Distance to periapsis in meters
+  - `timeToApoapsis`: Time to reach apoapsis in seconds
+  - `timeToPeriapsis`: Time to reach periapsis in seconds
+- `/planet` and `/planets` include detailed information:
+  - `landmarks`: Landmark information with name, displayName, angles, etc.
+  - `mapColor`: Planet map color with RGB values and hex code
+  - `orbit`: Orbital information including:
+    - `eccentricity`: Orbital eccentricity
+    - `semiMajorAxis`: Semi-major axis in meters
+    - `argumentOfPeriapsis`: Argument of periapsis in degrees
+    - `direction`: Orbital direction (1 for prograde, -1 for retrograde)
+    - `currentTrueAnomaly`: Current true anomaly in degrees
+    - `currentPositionAngle`: Current position angle in degrees
+    - `currentVelocityAngle`: Current velocity angle in degrees
+    - `currentRadius`: Current distance from parent body in meters
+    - `currentVelocity`: Current orbital velocity in m/s
 - `QuicksaveManager` operations:
   - `"save"` (default): Save current game state with given name
   - `"load"`: Load quicksave with given name
@@ -139,6 +161,11 @@ All control APIs use `POST /control` with a JSON body:
   - Supported formats:
     - Hex: "#FF0000" (red), "#00FF0080" (green with 50% alpha)
     - RGBA: "1.0,0.0,0.0,0.5" (red with 50% alpha), "0,1,0" (green, full alpha)
+- Engine Gimbal Control:
+  - `SetEngineGimbal`: Set engine gimbal angle (-1.0 to 1.0, where -1 = max left, 0 = center, 1 = max right)
+  - `SetEngineGimbalOn`: Enable/disable engine gimbal functionality
+  - `GetEngineGimbalInfo`: Get detailed engine gimbal information including current angle, status, thrust, etc.
+  - All gimbal methods require `partId` (engine part index) and optional `rocketIdOrName`
 - `CreateRocket` parameters:
   - `planetCode` (required): Planet codename where rocket will be created (e.g., "Earth", "Moon")
   - `blueprintJson` (required): JSON string containing rocket blueprint data

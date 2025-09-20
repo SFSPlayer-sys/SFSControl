@@ -2135,5 +2135,127 @@ namespace SFSControl
                 return $"Error: {ex.Message}";
             }
         }
+
+        // 设置发动机万向节角度
+        public static string SetEngineGimbal(int partId, float gimbalAngle, string rocketIdOrName = null)
+        {
+            try
+            {
+                var rocket = FindRocket(rocketIdOrName);
+                if (rocket == null || rocket.partHolder?.parts == null)
+                    return "Error: Rocket not found or parts not available";
+
+                if (partId < 0 || partId >= rocket.partHolder.parts.Count)
+                    return "Error: Invalid part ID";
+
+                var part = rocket.partHolder.parts[partId];
+                if (part == null)
+                    return "Error: Part not found";
+
+                var engineModule = part.GetComponent<SFS.Parts.Modules.EngineModule>();
+                if (engineModule == null)
+                    return "Error: Part is not an engine";
+
+                if (!engineModule.hasGimbal)
+                    return "Error: Engine does not have gimbal capability";
+
+                if (engineModule.gimbal == null)
+                    return "Error: Engine gimbal module not found";
+
+                // 限制角度在-1到1之间（SFS的万向节范围）
+                float clampedAngle = Mathf.Clamp(gimbalAngle, -1f, 1f);
+                
+                // 设置万向节目标角度
+                engineModule.gimbal.targetTime.Value = clampedAngle;
+
+                return $"Success: Engine gimbal set to {clampedAngle:F3}";
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] SetEngineGimbal error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        // 开关发动机万向节
+        public static string SetEngineGimbalOn(int partId, bool gimbalOn, string rocketIdOrName = null)
+        {
+            try
+            {
+                var rocket = FindRocket(rocketIdOrName);
+                if (rocket == null || rocket.partHolder?.parts == null)
+                    return "Error: Rocket not found or parts not available";
+
+                if (partId < 0 || partId >= rocket.partHolder.parts.Count)
+                    return "Error: Invalid part ID";
+
+                var part = rocket.partHolder.parts[partId];
+                if (part == null)
+                    return "Error: Part not found";
+
+                var engineModule = part.GetComponent<SFS.Parts.Modules.EngineModule>();
+                if (engineModule == null)
+                    return "Error: Part is not an engine";
+
+                if (!engineModule.hasGimbal)
+                    return "Error: Engine does not have gimbal capability";
+
+                if (engineModule.gimbalOn == null)
+                    return "Error: Engine gimbal control not found";
+
+                // 设置万向节开关状态
+                engineModule.gimbalOn.Value = gimbalOn;
+
+                return $"Success: Engine gimbal {(gimbalOn ? "enabled" : "disabled")}";
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] SetEngineGimbalOn error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
+
+        // 获取发动机万向节信息 
+        public static string GetEngineGimbalInfo(int partId, string rocketIdOrName = null)
+        {
+            try
+            {
+                var rocket = FindRocket(rocketIdOrName);
+                if (rocket == null || rocket.partHolder?.parts == null)
+                    return "Error: Rocket not found or parts not available";
+
+                if (partId < 0 || partId >= rocket.partHolder.parts.Count)
+                    return "Error: Invalid part ID";
+
+                var part = rocket.partHolder.parts[partId];
+                if (part == null)
+                    return "Error: Part not found";
+
+                var engineModule = part.GetComponent<SFS.Parts.Modules.EngineModule>();
+                if (engineModule == null)
+                    return "Error: Part is not an engine";
+
+                if (!engineModule.hasGimbal)
+                    return "Error: Engine does not have gimbal capability";
+
+                var gimbalInfo = new
+                {
+                    hasGimbal = engineModule.hasGimbal,
+                    gimbalOn = engineModule.gimbalOn?.Value ?? false,
+                    currentGimbalAngle = engineModule.gimbal?.targetTime?.Value ?? 0f,
+                    currentGimbalTime = engineModule.gimbal?.time?.Value ?? 0f,
+                    engineOn = engineModule.engineOn?.Value ?? false,
+                    thrust = engineModule.thrust?.Value ?? 0f,
+                    throttle = engineModule.throttle_Out?.Value ?? 0f
+                };
+
+                return Newtonsoft.Json.JsonConvert.SerializeObject(gimbalInfo, Newtonsoft.Json.Formatting.Indented);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Control] GetEngineGimbalInfo error: {ex.Message}");
+                return $"Error: {ex.Message}";
+            }
+        }
     }
 }

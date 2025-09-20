@@ -118,13 +118,6 @@ namespace SFSControl
             // 获取母星codename
             string parentPlanetCode = planet?.parentBody?.codeName;
 
-            double? distToApoapsis = null, distToPeriapsis = null;
-            if (orbit != null && orbitSuccess)
-            {
-                double curRadius = location?.Radius ?? 0;
-                distToApoapsis = Math.Abs(orbit.apoapsis - curRadius);
-                distToPeriapsis = Math.Abs(orbit.periapsis - curRadius);
-            }
 
             return new Dictionary<string, object>
             {
@@ -144,8 +137,6 @@ namespace SFSControl
                     period = orbit.period,
                     trueAnomaly = orbit.GetTrueAnomaly(SFS.World.WorldTime.main.worldTime) * 180.0 / Math.PI
                 } : null },
-                { "distToApoapsis", distToApoapsis },
-                { "distToPeriapsis", distToPeriapsis },
                 { "parentPlanetCode", parentPlanetCode }
             };
         }
@@ -190,6 +181,73 @@ namespace SFSControl
         private static Dictionary<string, object> GetPlanetInfoDict(Planet planet)
         {
             if (planet == null) return null;
+            
+            // 获取地标信息
+            List<Dictionary<string, object>> landmarks = null;
+            try {
+                if (planet.landmarks != null && planet.landmarks.Length > 0)
+                {
+                    landmarks = new List<Dictionary<string, object>>();
+                    foreach (var landmark in planet.landmarks)
+                    {
+                        if (landmark != null && landmark.data != null)
+                        {
+                            landmarks.Add(new Dictionary<string, object>
+                            {
+                                { "name", landmark.data.name },
+                                { "displayName", landmark.displayName?.ToString() },
+                                { "angle", landmark.data.angle },
+                                { "startAngle", landmark.data.startAngle },
+                                { "endAngle", landmark.data.endAngle },
+                                { "center", landmark.data.Center },
+                                { "angularWidth", landmark.data.AngularWidth }
+                            });
+                        }
+                    }
+                }
+            } catch { landmarks = null; }
+
+            // 获取地图颜色
+            Dictionary<string, object> mapColor = null;
+            try {
+                if (planet.data?.basics?.mapColor != null)
+                {
+                    var color = planet.data.basics.mapColor;
+                    mapColor = new Dictionary<string, object>
+                    {
+                        { "r", color.r },
+                        { "g", color.g },
+                        { "b", color.b },
+                        { "a", color.a },
+                        { "hex", $"#{ColorUtility.ToHtmlStringRGB(color)}" }
+                    };
+                }
+            } catch { mapColor = null; }
+
+            // 获取轨道信息（偏心率、位置角度等）
+            Dictionary<string, object> orbitInfo = null;
+            try {
+                if (planet.orbit != null)
+                {
+                    var currentTime = SFS.World.WorldTime.main?.worldTime ?? 0;
+                    var currentLocation = planet.GetLocation(currentTime);
+                    var trueAnomaly = planet.orbit.GetTrueAnomaly(currentTime);
+                    
+                    orbitInfo = new Dictionary<string, object>
+                    {
+                        { "eccentricity", planet.data?.orbit?.eccentricity ?? 0 },
+                        { "semiMajorAxis", planet.data?.orbit?.semiMajorAxis ?? 0 },
+                        { "argumentOfPeriapsis", planet.data?.orbit?.argumentOfPeriapsis ?? 0 },
+                        { "direction", planet.data?.orbit?.direction ?? 1 },
+                        { "currentTrueAnomaly", trueAnomaly * 180.0 / Math.PI }, // 转换为度
+                        { "currentPositionAngle", currentLocation.position.AngleDegrees },
+                        { "currentVelocityAngle", currentLocation.velocity.AngleDegrees },
+                        { "currentRadius", currentLocation.position.magnitude },
+                        { "currentVelocity", currentLocation.velocity.magnitude }
+                    };
+                }
+            } catch { orbitInfo = null; }
+            
             return new Dictionary<string, object>
             {
                 { "codeName", planet.codeName },
@@ -201,7 +259,10 @@ namespace SFSControl
                 { "hasAtmosphere", planet.HasAtmospherePhysics },
                 { "atmosphereHeight", planet.HasAtmospherePhysics ? planet.AtmosphereHeightPhysics : 0 },
                 { "parent", planet.parentBody?.codeName },
-                { "satellites", planet.satellites?.Where(s => s != null).Select(s => s.codeName).ToArray() }
+                { "satellites", planet.satellites?.Where(s => s != null).Select(s => s.codeName).ToArray() },
+                { "landmarks", landmarks },
+                { "mapColor", mapColor },
+                { "orbit", orbitInfo }
             };
         }
 
@@ -410,12 +471,50 @@ namespace SFSControl
                 }
             } catch { thrust = null; }
 
+            // 获取最大推力（吨）
+            double? maxThrust = null;
+            try {
+                if (rocket?.partHolder != null)
+                {
+                    float maxThrustValue = rocket.partHolder.GetModules<SFS.Parts.Modules.EngineModule>().Sum(a => a.thrust.Value) 
+                                         + rocket.partHolder.GetModules<SFS.Parts.Modules.BoosterModule>().Sum(b => b.thrustVector.Value.magnitude);
+                    maxThrust = maxThrustValue;
+                }
+            } catch { maxThrust = null; }
+
             // 计算推重比(TWR)
             double? twr = null;
             try {
                 if (mass.HasValue && thrust.HasValue && mass.Value > 0)
                     twr = thrust.Value / mass.Value;
             } catch { twr = null; }
+
+            // 获取轨道远点近点信息
+            double? distToApoapsis = null, distToPeriapsis = null;
+            double? timeToApoapsis = null, timeToPeriapsis = null;
+            try {
+                var location = rocket?.location?.Value;
+                if (location != null && location.velocity.magnitude > 0.1)
+                {
+                    var orbit = SFS.World.Orbit.TryCreateOrbit(location, true, false, out bool orbitSuccess);
+                    if (orbit != null && orbitSuccess)
+                    {
+                        double curRadius = location.Radius;
+                        distToApoapsis = Math.Abs(orbit.apoapsis - curRadius);
+                        distToPeriapsis = Math.Abs(orbit.periapsis - curRadius);
+                        var currentTime = SFS.World.WorldTime.main?.worldTime ?? 0;
+                        // 远点对应的真近点角是π（180度）
+                        timeToApoapsis = orbit.GetNextTrueAnomalyPassTime(currentTime, Math.PI) - currentTime;
+                        // 近点对应的真近点角是0度
+                        timeToPeriapsis = orbit.GetNextTrueAnomalyPassTime(currentTime, 0) - currentTime;
+                    }
+                }
+            } catch { 
+                distToApoapsis = null; 
+                distToPeriapsis = null; 
+                timeToApoapsis = null; 
+                timeToPeriapsis = null; 
+            }
 
             // 获取转动惯量相关信息
             Dictionary<string, object> inertiaInfo = null;
@@ -447,7 +546,12 @@ namespace SFSControl
                 { "fuelBarGroups", fuelBarGroups },
                 { "mass", mass },
                 { "thrust", thrust },
+                { "maxThrust", maxThrust },
                 { "TWR", twr },
+                { "distToApoapsis", distToApoapsis },
+                { "distToPeriapsis", distToPeriapsis },
+                { "timeToApoapsis", timeToApoapsis },
+                { "timeToPeriapsis", timeToPeriapsis },
                 { "inertia", inertiaInfo }
             };
         }

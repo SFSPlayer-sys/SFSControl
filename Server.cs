@@ -498,6 +498,23 @@ namespace SFSControl
                                     string rocketIdOrName_color = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
                                     result = Control.SetMapIconColor(rgbaValue, rocketIdOrName_color);
                                     break;
+                                case "SetEngineGimbal":
+                                    int partId_gimbal = controlReq.args.Length > 0 && controlReq.args[0] != null ? Convert.ToInt32(controlReq.args[0]) : -1;
+                                    float gimbalAngle = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToSingle(controlReq.args[1]) : 0f;
+                                    string rocketIdOrName_gimbal = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
+                                    result = Control.SetEngineGimbal(partId_gimbal, gimbalAngle, rocketIdOrName_gimbal);
+                                    break;
+                                case "SetEngineGimbalOn":
+                                    int partId_gimbalOn = controlReq.args.Length > 0 && controlReq.args[0] != null ? Convert.ToInt32(controlReq.args[0]) : -1;
+                                    bool gimbalOn = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToBoolean(controlReq.args[1]) : false;
+                                    string rocketIdOrName_gimbalOn = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
+                                    result = Control.SetEngineGimbalOn(partId_gimbalOn, gimbalOn, rocketIdOrName_gimbalOn);
+                                    break;
+                                case "GetEngineGimbalInfo":
+                                    int partId_gimbalInfo = controlReq.args.Length > 0 && controlReq.args[0] != null ? Convert.ToInt32(controlReq.args[0]) : -1;
+                                    string rocketIdOrName_gimbalInfo = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
+                                    result = Control.GetEngineGimbalInfo(partId_gimbalInfo, rocketIdOrName_gimbalInfo);
+                                    break;
                                 case "CreateRocket":
                                     string planetCode_rocket = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
                                     string blueprintJson_rocket = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
