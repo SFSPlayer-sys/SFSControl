@@ -17,7 +17,7 @@ namespace SFSControl
         public override string DisplayName => "SFSControl";
         public override string Author => "SFSGamer"; 
         public override string MinimumGameVersionNecessary => "1.5.10.2";
-        public override string ModVersion => "1.1.1";
+        public override string ModVersion => "1.1.2";
         public override string Description => "Provide an interface for scripts to control SFS externally.";
 
         private Server serverComponent;
@@ -33,7 +33,9 @@ namespace SFSControl
             serverComponent.StartServer(SettingsManager.settings.port);
 
             Application.runInBackground = true;
+
             new Harmony("SFSControl.DeltaVPatch").PatchAll();
+
         }
     }
 

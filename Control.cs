@@ -15,20 +15,143 @@ using SFS.Audio;
 using System.Collections.Generic;
 using SFS.Tutorials;
 using SFS.Parts.Modules;
+using System.Reflection;
+using UnityEngine;
+using SFS.World;
 
 namespace SFSControl
 {
+    // 方向模式枚举
+    public enum DirectionMode
+    {
+        Prograde,
+        Target,
+        Surface,
+        None,
+        Default
+    }
+
+    public class SASComponent : MonoBehaviour
+    {
+        public DirectionMode Direction = DirectionMode.Default;
+        public float Offset = 0f;
+        public float TargetAngle = 0f;
+        public string ModeDescription = "";
+
+        void FixedUpdate()
+        {
+            if (!WorldTime.main.realtimePhysics.Value)
+                return;
+
+            var rocket = GetComponent<Rocket>();
+            if (rocket == null || rocket.arrowkeys == null || rocket.rb2d == null || !rocket.hasControl.Value)
+                return;
+
+            // 设置角阻力
+            rocket.rb2d.angularDrag = 0.05f;
+
+            float targetAngle = 0f;
+            
+            // 计算目标角度
+            switch (Direction)
+            {
+                case DirectionMode.Default:
+                    rocket.arrowkeys.turnAxis.Value = 0f;
+                    return;
+
+                case DirectionMode.Prograde:
+                    Double2 velocity = rocket.location.velocity.Value;
+                    if (velocity.magnitude <= 3)
+                    {
+                        rocket.arrowkeys.turnAxis.Value = 0f;
+                        return;
+                    }
+                    targetAngle = (float)Math.Atan2(velocity.y, velocity.x) * Mathf.Rad2Deg;
+                    break;
+
+                case DirectionMode.Surface:
+                    targetAngle = (float)Math.Atan2(rocket.location.position.Value.y, rocket.location.position.Value.x) * Mathf.Rad2Deg;
+                    break;
+
+                case DirectionMode.Target:
+                    // 检查是否有选中的目标
+                    if (rocket.target == null)
+                    {
+                        rocket.arrowkeys.turnAxis.Value = 0f;
+                        return;
+                    }
+                    
+                    // 计算指向目标的角度
+                    Double2 targetPosition = rocket.target.location.position.Value;
+                    Double2 rocketPosition = rocket.location.position.Value;
+                    Double2 directionToTarget = targetPosition - rocketPosition;
+                    
+                    if (directionToTarget.magnitude <= 0.1)
+                    {
+                        rocket.arrowkeys.turnAxis.Value = 0f;
+                        return;
+                    }
+                    
+                    targetAngle = (float)Math.Atan2(directionToTarget.y, directionToTarget.x) * Mathf.Rad2Deg;
+                    break;
+
+                case DirectionMode.None:
+                    rocket.rb2d.angularDrag = 0;
+                    rocket.arrowkeys.turnAxis.Value = 0f;
+                    return;
+            }
+
+            // 应用偏移
+            targetAngle += Offset;
+            if (Direction == DirectionMode.Default && TargetAngle != 0f)
+            {
+                targetAngle = TargetAngle;
+            }
+            float turnInput = CalculateTurnInput(rocket, targetAngle);
+            rocket.arrowkeys.turnAxis.Value = turnInput;
+        }
+
+        // 计算转向输入
+        private float CalculateTurnInput(Rocket rocket, float targetAngle)
+        {
+            float angularVelocity = rocket.rb2d.angularVelocity;
+            float currentRotation = NormalizeAngle(rocket.GetRotation());
+            
+            float deltaAngle = NormalizeAngle(targetAngle - currentRotation);
+            
+            // 获取扭矩
+            float torque = (float)typeof(Rocket).GetMethod("GetTorque", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(rocket, null);
+            float mass = rocket.rb2d.mass;
+            
+            // 大质量火箭扭矩调整
+            if (mass > 200f)
+                torque /= Mathf.Pow(mass / 200f, 0.35f);
+            
+            float maxAcceleration = torque * Mathf.Rad2Deg / mass;
+            float stoppingTime = Mathf.Abs(angularVelocity / maxAcceleration);
+            float currentTime = Mathf.Abs(deltaAngle / angularVelocity);
+            
+            if (stoppingTime > currentTime)
+            {
+                return Mathf.Sign(angularVelocity);
+            }
+            else
+            {
+                return -Mathf.Sign(deltaAngle);
+            }
+        }
+
+        // 归一化角度到-180~180
+        private float NormalizeAngle(float input)
+        {
+            float m = (input + 180f) % 360f;
+            return m < 0 ? m + 180f : m - 180f;
+        }
+    }
+
     // 处理对火箭和游戏的操作。
     public static class Control
     {
-        //归一化角度到-180~180
-        private static float NormalizeAngle(float angle)
-        {
-            angle %= 360f;
-            if (angle > 180f) angle -= 360f;
-            if (angle < -180f) angle += 360f;
-            return angle;
-        }
 
         // 根据编号/名称查找火箭，默认当前控制火箭
         public static Rocket FindRocket(string rocketIdOrName = null)
@@ -108,6 +231,13 @@ namespace SFSControl
             if (rocket == null || rocket.arrowkeys == null || rocket.rb2d == null)
                 return "Error: Not in world scene or rocket/arrowkeys/rb2d not available";
             
+            // 禁用SAS组件
+            var sasComponent = rocket.GetComponent<SASComponent>();
+            if (sasComponent != null)
+            {
+                sasComponent.Direction = DirectionMode.Default;
+            }
+            
             rocket.arrowkeys.turnAxis.Value = 0f;      // 停止输入
             rocket.rb2d.angularVelocity = 0f;          // 清零角速度
             
@@ -120,126 +250,58 @@ namespace SFSControl
             return "Success";
         }
         
-        // 合并旋转方法
-        public static string Rotate(bool isTarget = false, float angle = 0, string reference = null, string direction = null, string rocketIdOrName = null)
+        // 智能旋转方法 - 支持多种模式
+        public static string Rotate(object modeOrAngle = null, float offset = 0f, string rocketIdOrName = null)
         {
             var rocket = FindRocket(rocketIdOrName);
             if (rocket == null || rocket.arrowkeys == null || rocket.rb2d == null)
                 return "Error: Not in world scene or rocket/arrowkeys/rb2d not available";
 
-            // 计算目标角度
-            float targetAngle = 0;
-            if (isTarget)
+            if (!WorldTime.main.realtimePhysics.Value || !rocket.hasControl.Value)
+                return "Error: Physics not running or rocket not controllable";
+
+            // 设置角阻力
+            rocket.rb2d.angularDrag = 0.05f;
+
+            // 智能解析参数
+            if (modeOrAngle == null)
             {
-                // 参考系处理
-                if (reference == "surface")
+                // 无参数 - 默认禁用SAS
+                rocket.arrowkeys.turnAxis.Value = 0f;
+                return "Success: SAS disabled";
+            }
+            
+            // 获取或创建SAS组件
+            var sasComponent = rocket.GetOrAddComponent<SASComponent>();
+            
+            // 设置SAS参数
+            if (float.TryParse(modeOrAngle.ToString(), out float directAngle))
+            {
+                sasComponent.Direction = DirectionMode.Default; // 自定义角度模式
+                sasComponent.TargetAngle = directAngle + offset;
+                sasComponent.ModeDescription = $"{directAngle}°";
+            }
+            else if (Enum.TryParse<DirectionMode>(modeOrAngle.ToString(), true, out DirectionMode directionMode))
+            {
+                sasComponent.Direction = directionMode;
+                sasComponent.Offset = offset;
+                sasComponent.ModeDescription = directionMode.ToString();
+                
+                if (directionMode == DirectionMode.Default || directionMode == DirectionMode.None)
                 {
-                    // 使用星球表面的法线角度
-                    var planet = rocket.location.planet.Value;
-                    var position = rocket.location.position.Value;
-                    var terrainNormal = planet.GetTerrainNormal(position);
-                    var surfaceAngle = terrainNormal.AngleDegrees;
-                    
-                    // 将提供的角度转换为相对于地面法线的角度
-                    targetAngle = (float)(surfaceAngle + angle);
-                }
-                else if (reference == "orbit")
-                {
-                    var v = rocket.location.velocity.Value;
-                    if ((float)v.magnitude < 0.1f)// 速度太低，无法计算轨道方向
-                        return "Error: Velocity too low for orbit reference";
-                    targetAngle = Mathf.Atan2((float)v.y, (float)v.x) * Mathf.Rad2Deg;
-                }
-                else
-                {
-                    // 默认情况：直接使用提供的角度
-                    targetAngle = angle;
+                    rocket.arrowkeys.turnAxis.Value = 0f;
+                    if (directionMode == DirectionMode.None)
+                        rocket.rb2d.angularDrag = 0;
+                    return $"Success: {(directionMode == DirectionMode.None ? "Rotation control disabled" : "SAS disabled")}";
                 }
             }
             else
             {
-                targetAngle = angle;
-            }
-            // 归一化角度到0~360
-            targetAngle = (targetAngle % 360f + 360f) % 360f;
-
-            // 启动协程平滑旋转
-            ControlCoroutineRunner.Instance.StartCoroutine(RotateRocketToTargetAngle(rocket, targetAngle, direction));
-            return "Success";
-        }
-        // 旋转火箭到目标角度
-        private static IEnumerator RotateRocketToTargetAngle(Rocket rocket, float targetAngle, string direction)
-        {
-            float timeout = 60f; // 超时时间
-            float elapsed = 0f;
-            float error;
-            
-            do
-            {
-                float current = (rocket.rb2d.rotation % 360f + 360f) % 360f;
-                error = Mathf.DeltaAngle(current, targetAngle);
-
-                // 方向处理
-                if (direction == "left" && error < 0) error += 360f;
-                if (direction == "right" && error > 0) error -= 360f;
-
-                // 误差小于1度且角速度很小，锁定角度
-                if (Mathf.Abs(error) < 1f && Mathf.Abs(rocket.rb2d.angularVelocity) < 0.5f)
-                {
-                    rocket.rb2d.rotation = targetAngle;
-                    rocket.arrowkeys.turnAxis.Value = 0f;
-                    rocket.rb2d.angularVelocity = 0f;
-                    yield break;
-                }
-                
-                // 获取可用扭矩
-                float torque = (float)typeof(Rocket).GetMethod("GetTorque", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(rocket, null);
-                
-                // 计算停止旋转所需的输入
-                float stopRotationInput = GetStopRotationTurnAxis(rocket, torque);
-                
-                // 计算目标角速度
-                float targetAngularVelocity = -error * 2f; // 比例控制
-                float currentAngularVelocity = rocket.rb2d.angularVelocity;
-                float angularVelocityError = targetAngularVelocity - currentAngularVelocity;
-                
-                // 计算输入
-                float turnInput = 0f;
-                
-                if (Mathf.Abs(error) > 5f) // 误差较大时，使用比例控制
-                {
-                    turnInput = Mathf.Sign(-error) * Mathf.Clamp(Mathf.Abs(error) / 30f, 0.1f, 1.0f);
-                }
-                else // 误差较小时，使用停止旋转逻辑
-                {
-                    turnInput = stopRotationInput;
-                }
-                
-                // 应用输入
-                rocket.arrowkeys.turnAxis.Value = turnInput;
-
-                yield return new WaitForFixedUpdate();
-                elapsed += Time.fixedDeltaTime;
-            } while (elapsed < timeout);
-
-            // 超时保护
-            rocket.arrowkeys.turnAxis.Value = 0f;
-            rocket.rb2d.angularVelocity = 0f;
-            //Debug.Log("Rotation timed out.");
-        }
-        
-        // 模拟GetStopRotationTurnAxis方法
-        private static float GetStopRotationTurnAxis(Rocket rocket, float torque)
-        {
-            float angularVelocity = rocket.rb2d.angularVelocity;
-            float angularAcceleration = torque * 57.29578f / rocket.rb2d.mass * Time.fixedDeltaTime;
-            
-            if (angularAcceleration == 0f)
-            {
-                return 0f;
+                return "Error: Invalid mode or angle. Use: Prograde, Surface, None, Default, or a number for angle";
             }
             
-            return Mathf.Clamp(angularVelocity / angularAcceleration, -1f, 1f);
+            string offsetText = offset != 0 ? $" with {offset}° offset" : "";
+            return $"Success: Rotating to {sasComponent.ModeDescription}{offsetText}";
         }
 
         // 使用部件
@@ -2136,126 +2198,5 @@ namespace SFSControl
             }
         }
 
-        // 设置发动机万向节角度
-        public static string SetEngineGimbal(int partId, float gimbalAngle, string rocketIdOrName = null)
-        {
-            try
-            {
-                var rocket = FindRocket(rocketIdOrName);
-                if (rocket == null || rocket.partHolder?.parts == null)
-                    return "Error: Rocket not found or parts not available";
-
-                if (partId < 0 || partId >= rocket.partHolder.parts.Count)
-                    return "Error: Invalid part ID";
-
-                var part = rocket.partHolder.parts[partId];
-                if (part == null)
-                    return "Error: Part not found";
-
-                var engineModule = part.GetComponent<SFS.Parts.Modules.EngineModule>();
-                if (engineModule == null)
-                    return "Error: Part is not an engine";
-
-                if (!engineModule.hasGimbal)
-                    return "Error: Engine does not have gimbal capability";
-
-                if (engineModule.gimbal == null)
-                    return "Error: Engine gimbal module not found";
-
-                // 限制角度在-1到1之间（SFS的万向节范围）
-                float clampedAngle = Mathf.Clamp(gimbalAngle, -1f, 1f);
-                
-                // 设置万向节目标角度
-                engineModule.gimbal.targetTime.Value = clampedAngle;
-
-                return $"Success: Engine gimbal set to {clampedAngle:F3}";
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[Control] SetEngineGimbal error: {ex.Message}");
-                return $"Error: {ex.Message}";
-            }
-        }
-
-        // 开关发动机万向节
-        public static string SetEngineGimbalOn(int partId, bool gimbalOn, string rocketIdOrName = null)
-        {
-            try
-            {
-                var rocket = FindRocket(rocketIdOrName);
-                if (rocket == null || rocket.partHolder?.parts == null)
-                    return "Error: Rocket not found or parts not available";
-
-                if (partId < 0 || partId >= rocket.partHolder.parts.Count)
-                    return "Error: Invalid part ID";
-
-                var part = rocket.partHolder.parts[partId];
-                if (part == null)
-                    return "Error: Part not found";
-
-                var engineModule = part.GetComponent<SFS.Parts.Modules.EngineModule>();
-                if (engineModule == null)
-                    return "Error: Part is not an engine";
-
-                if (!engineModule.hasGimbal)
-                    return "Error: Engine does not have gimbal capability";
-
-                if (engineModule.gimbalOn == null)
-                    return "Error: Engine gimbal control not found";
-
-                // 设置万向节开关状态
-                engineModule.gimbalOn.Value = gimbalOn;
-
-                return $"Success: Engine gimbal {(gimbalOn ? "enabled" : "disabled")}";
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[Control] SetEngineGimbalOn error: {ex.Message}");
-                return $"Error: {ex.Message}";
-            }
-        }
-
-        // 获取发动机万向节信息 
-        public static string GetEngineGimbalInfo(int partId, string rocketIdOrName = null)
-        {
-            try
-            {
-                var rocket = FindRocket(rocketIdOrName);
-                if (rocket == null || rocket.partHolder?.parts == null)
-                    return "Error: Rocket not found or parts not available";
-
-                if (partId < 0 || partId >= rocket.partHolder.parts.Count)
-                    return "Error: Invalid part ID";
-
-                var part = rocket.partHolder.parts[partId];
-                if (part == null)
-                    return "Error: Part not found";
-
-                var engineModule = part.GetComponent<SFS.Parts.Modules.EngineModule>();
-                if (engineModule == null)
-                    return "Error: Part is not an engine";
-
-                if (!engineModule.hasGimbal)
-                    return "Error: Engine does not have gimbal capability";
-
-                var gimbalInfo = new
-                {
-                    hasGimbal = engineModule.hasGimbal,
-                    gimbalOn = engineModule.gimbalOn?.Value ?? false,
-                    currentGimbalAngle = engineModule.gimbal?.targetTime?.Value ?? 0f,
-                    currentGimbalTime = engineModule.gimbal?.time?.Value ?? 0f,
-                    engineOn = engineModule.engineOn?.Value ?? false,
-                    thrust = engineModule.thrust?.Value ?? 0f,
-                    throttle = engineModule.throttle_Out?.Value ?? 0f
-                };
-
-                return Newtonsoft.Json.JsonConvert.SerializeObject(gimbalInfo, Newtonsoft.Json.Formatting.Indented);
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[Control] GetEngineGimbalInfo error: {ex.Message}");
-                return $"Error: {ex.Message}";
-            }
-        }
     }
 }

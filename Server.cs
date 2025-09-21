@@ -332,22 +332,10 @@ namespace SFSControl
                                     result = Control.Stage(rocketIdOrName_stage);
                                     break;
                                 case "Rotate":
-                                    bool isTarget = false;
-                                    float angle = 0;
-                                    string reference = null;
-                                    string direction = null;
-                                    string rocketIdOrName = null;
-                                    if (controlReq.args.Length > 0 && controlReq.args[0] != null)
-                                        isTarget = Convert.ToBoolean(controlReq.args[0]);
-                                    if (controlReq.args.Length > 1 && controlReq.args[1] != null)
-                                        angle = Convert.ToSingle(controlReq.args[1]);
-                                    if (controlReq.args.Length > 2 && controlReq.args[2] != null)
-                                        reference = controlReq.args[2].ToString();
-                                    if (controlReq.args.Length > 3 && controlReq.args[3] != null)
-                                        direction = controlReq.args[3].ToString();
-                                    if (controlReq.args.Length > 4 && controlReq.args[4] != null)
-                                        rocketIdOrName = controlReq.args[4].ToString();
-                                    result = Control.Rotate(isTarget, angle, reference, direction, rocketIdOrName);
+                                    object modeOrAngle = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0] : null;
+                                    float offset = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToSingle(controlReq.args[1]) : 0f;
+                                    string rocketIdOrName = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
+                                    result = Control.Rotate(modeOrAngle, offset, rocketIdOrName);
                                     break;
                                 case "UsePart":
                                     string rocketIdOrName_usepart = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
@@ -497,23 +485,6 @@ namespace SFSControl
                                     string rgbaValue = controlReq.args[0].ToString();
                                     string rocketIdOrName_color = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
                                     result = Control.SetMapIconColor(rgbaValue, rocketIdOrName_color);
-                                    break;
-                                case "SetEngineGimbal":
-                                    int partId_gimbal = controlReq.args.Length > 0 && controlReq.args[0] != null ? Convert.ToInt32(controlReq.args[0]) : -1;
-                                    float gimbalAngle = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToSingle(controlReq.args[1]) : 0f;
-                                    string rocketIdOrName_gimbal = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
-                                    result = Control.SetEngineGimbal(partId_gimbal, gimbalAngle, rocketIdOrName_gimbal);
-                                    break;
-                                case "SetEngineGimbalOn":
-                                    int partId_gimbalOn = controlReq.args.Length > 0 && controlReq.args[0] != null ? Convert.ToInt32(controlReq.args[0]) : -1;
-                                    bool gimbalOn = controlReq.args.Length > 1 && controlReq.args[1] != null ? Convert.ToBoolean(controlReq.args[1]) : false;
-                                    string rocketIdOrName_gimbalOn = controlReq.args.Length > 2 && controlReq.args[2] != null ? controlReq.args[2].ToString() : null;
-                                    result = Control.SetEngineGimbalOn(partId_gimbalOn, gimbalOn, rocketIdOrName_gimbalOn);
-                                    break;
-                                case "GetEngineGimbalInfo":
-                                    int partId_gimbalInfo = controlReq.args.Length > 0 && controlReq.args[0] != null ? Convert.ToInt32(controlReq.args[0]) : -1;
-                                    string rocketIdOrName_gimbalInfo = controlReq.args.Length > 1 && controlReq.args[1] != null ? controlReq.args[1].ToString() : null;
-                                    result = Control.GetEngineGimbalInfo(partId_gimbalInfo, rocketIdOrName_gimbalInfo);
                                     break;
                                 case "CreateRocket":
                                     string planetCode_rocket = controlReq.args.Length > 0 && controlReq.args[0] != null ? controlReq.args[0].ToString() : null;
