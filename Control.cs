@@ -16,8 +16,6 @@ using System.Collections.Generic;
 using SFS.Tutorials;
 using SFS.Parts.Modules;
 using System.Reflection;
-using UnityEngine;
-using SFS.World;
 
 namespace SFSControl
 {
@@ -40,6 +38,21 @@ namespace SFSControl
 
         void FixedUpdate()
         {
+            ApplySASControl();
+        }
+
+        void Update()
+        {
+            ApplySASControl();
+        }
+
+        void LateUpdate()
+        {
+            ApplySASControl();
+        }
+
+        void ApplySASControl()
+        {
             if (!WorldTime.main.realtimePhysics.Value)
                 return;
 
@@ -47,68 +60,77 @@ namespace SFSControl
             if (rocket == null || rocket.arrowkeys == null || rocket.rb2d == null || !rocket.hasControl.Value)
                 return;
 
-            // 设置角阻力
+            // 设置角阻力   
             rocket.rb2d.angularDrag = 0.05f;
 
-            float targetAngle = 0f;
-            
-            // 计算目标角度
+            float angularVelocity = rocket.rb2d.angularVelocity;
+            float currentRotation = NormalizeAngle(rocket.GetRotation());
+
+            float TargetRotationToTorque(float targetAngle)
+            {
+                targetAngle -= Offset;
+                float deltaAngle = NormalizeAngle(targetAngle - currentRotation);
+
+                float torque = (float)typeof(Rocket).GetMethod("GetTorque", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(rocket, null);
+                float mass = rocket.rb2d.mass;
+                if (mass > 200f)
+                    torque /= Mathf.Pow(mass / 200f, 0.35f);
+                
+                float maxAcceleration = torque * Mathf.Rad2Deg / mass;
+                float stoppingTime = Mathf.Abs(angularVelocity / maxAcceleration);
+                float currentTime = Mathf.Abs(deltaAngle / angularVelocity);
+                
+                if (stoppingTime > currentTime)
+                {
+                    return Mathf.Sign(angularVelocity);
+                }
+                else
+                {
+                    return -Mathf.Sign(deltaAngle);
+                }
+            }
+
+            float result = 0f;
             switch (Direction)
             {
                 case DirectionMode.Default:
-                    rocket.arrowkeys.turnAxis.Value = 0f;
                     return;
 
                 case DirectionMode.Prograde:
-                    Double2 velocity = rocket.location.velocity.Value;
-                    if (velocity.magnitude <= 3)
-                    {
-                        rocket.arrowkeys.turnAxis.Value = 0f;
+                    Double2 offset = rocket.location.velocity.Value;
+                    if (offset.magnitude <= 3)
                         return;
-                    }
-                    targetAngle = (float)Math.Atan2(velocity.y, velocity.x) * Mathf.Rad2Deg;
+                    result = TargetRotationToTorque((float)Math.Atan2(offset.y, offset.x) * Mathf.Rad2Deg);
                     break;
 
                 case DirectionMode.Surface:
-                    targetAngle = (float)Math.Atan2(rocket.location.position.Value.y, rocket.location.position.Value.x) * Mathf.Rad2Deg;
+                    float targetRotation = NormalizeAngle((float)Math.Atan2(rocket.location.position.Value.y, rocket.location.position.Value.x) * Mathf.Rad2Deg);
+                    result = TargetRotationToTorque(targetRotation);
                     break;
 
                 case DirectionMode.Target:
-                    // 检查是否有选中的目标
-                    if (rocket.target == null)
-                    {
-                        rocket.arrowkeys.turnAxis.Value = 0f;
+                    var target = SFS.World.Maps.Map.navigation?.target;
+                    if (target == null)
                         return;
-                    }
                     
-                    // 计算指向目标的角度
-                    Double2 targetPosition = rocket.target.location.position.Value;
+                    Double2 targetPosition = target.Location.position;
                     Double2 rocketPosition = rocket.location.position.Value;
                     Double2 directionToTarget = targetPosition - rocketPosition;
                     
                     if (directionToTarget.magnitude <= 0.1)
-                    {
-                        rocket.arrowkeys.turnAxis.Value = 0f;
                         return;
-                    }
                     
-                    targetAngle = (float)Math.Atan2(directionToTarget.y, directionToTarget.x) * Mathf.Rad2Deg;
+                    float targetAngle = NormalizeAngle((float)Math.Atan2(directionToTarget.y, directionToTarget.x) * Mathf.Rad2Deg);
+                    result = TargetRotationToTorque(targetAngle);
                     break;
 
                 case DirectionMode.None:
                     rocket.rb2d.angularDrag = 0;
-                    rocket.arrowkeys.turnAxis.Value = 0f;
-                    return;
+                    result = 0;
+                    break;
             }
 
-            // 应用偏移
-            targetAngle += Offset;
-            if (Direction == DirectionMode.Default && TargetAngle != 0f)
-            {
-                targetAngle = TargetAngle;
-            }
-            float turnInput = CalculateTurnInput(rocket, targetAngle);
-            rocket.arrowkeys.turnAxis.Value = turnInput;
+            rocket.arrowkeys.turnAxis.Value = result;
         }
 
         // 计算转向输入
@@ -116,14 +138,10 @@ namespace SFSControl
         {
             float angularVelocity = rocket.rb2d.angularVelocity;
             float currentRotation = NormalizeAngle(rocket.GetRotation());
-            
             float deltaAngle = NormalizeAngle(targetAngle - currentRotation);
-            
-            // 获取扭矩
+
             float torque = (float)typeof(Rocket).GetMethod("GetTorque", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(rocket, null);
             float mass = rocket.rb2d.mass;
-            
-            // 大质量火箭扭矩调整
             if (mass > 200f)
                 torque /= Mathf.Pow(mass / 200f, 0.35f);
             
@@ -250,7 +268,7 @@ namespace SFSControl
             return "Success";
         }
         
-        // 智能旋转方法 - 支持多种模式
+        // 旋转方法
         public static string Rotate(object modeOrAngle = null, float offset = 0f, string rocketIdOrName = null)
         {
             var rocket = FindRocket(rocketIdOrName);
@@ -263,12 +281,11 @@ namespace SFSControl
             // 设置角阻力
             rocket.rb2d.angularDrag = 0.05f;
 
-            // 智能解析参数
             if (modeOrAngle == null)
             {
-                // 无参数 - 默认禁用SAS
+                // 无参数
                 rocket.arrowkeys.turnAxis.Value = 0f;
-                return "Success: SAS disabled";
+                return "Success";
             }
             
             // 获取或创建SAS组件
@@ -277,7 +294,7 @@ namespace SFSControl
             // 设置SAS参数
             if (float.TryParse(modeOrAngle.ToString(), out float directAngle))
             {
-                sasComponent.Direction = DirectionMode.Default; // 自定义角度模式
+                sasComponent.Direction = DirectionMode.Default;
                 sasComponent.TargetAngle = directAngle + offset;
                 sasComponent.ModeDescription = $"{directAngle}°";
             }
@@ -292,16 +309,16 @@ namespace SFSControl
                     rocket.arrowkeys.turnAxis.Value = 0f;
                     if (directionMode == DirectionMode.None)
                         rocket.rb2d.angularDrag = 0;
-                    return $"Success: {(directionMode == DirectionMode.None ? "Rotation control disabled" : "SAS disabled")}";
+                    return $"Success";
                 }
             }
             else
             {
-                return "Error: Invalid mode or angle. Use: Prograde, Surface, None, Default, or a number for angle";
+                return "Error: Invalid mode or angle. Use: Prograde, Target, Surface, None, Default, or a number for angle";
             }
             
             string offsetText = offset != 0 ? $" with {offset}° offset" : "";
-            return $"Success: Rotating to {sasComponent.ModeDescription}{offsetText}";
+            return $"Success";
         }
 
         // 使用部件

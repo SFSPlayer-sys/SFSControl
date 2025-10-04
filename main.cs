@@ -13,12 +13,13 @@ namespace SFSControl
 
     public class Main : ModLoader.Mod
     {
+        public const string VERSION = "1.2";
         public override string ModNameID => "SFSControl";
         public override string DisplayName => "SFSControl";
         public override string Author => "SFSGamer"; 
         public override string MinimumGameVersionNecessary => "1.5.10.2";
-        public override string ModVersion => "1.1.2";
-        public override string Description => "Provide an interface for scripts to control SFS externally.";
+        public override string ModVersion => VERSION;
+        public override string Description => "Add APIs that can be accessed by external programs for SFS.";
 
         private Server serverComponent;
 
@@ -26,15 +27,15 @@ namespace SFSControl
         {
             // 加载设置
             SettingsManager.Load();
-
             var serverObject = new GameObject("SFSControl_Instance");
             GameObject.DontDestroyOnLoad(serverObject);
             serverComponent = serverObject.AddComponent<Server>();
             serverComponent.StartServer(SettingsManager.settings.port);
-
             Application.runInBackground = true;
-
             new Harmony("SFSControl.DeltaVPatch").PatchAll();
+
+			// Ensure Draw system exists so /draw works immediately
+			DrawManager.Ensure();
 
         }
     }
@@ -125,6 +126,24 @@ namespace SFSControl
                     spriteRenderer.color = new Color(userColor.r, userColor.g, userColor.b, fadeOut);
                 }
             }
+        }
+    }
+
+    // 确保SFS在失去焦点时继续运行
+    [HarmonyPatch(typeof(UnityEngine.Application), "isFocused", MethodType.Getter)]
+    public static class Patch_Application_isFocused
+    {
+        static bool Postfix(bool __result)
+        {
+            return true;
+        }
+    }
+    [HarmonyPatch(typeof(UnityEngine.Application), "isPlaying", MethodType.Getter)]
+    public static class Patch_Application_isPlaying
+    {
+        static bool Postfix(bool __result)
+        {
+            return true;
         }
     }
 }

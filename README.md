@@ -4,6 +4,86 @@
 
 SFSControl provides programmatic control over Space Flight Simulator rockets through HTTP API requests. This mod allows external applications to control rocket rotation, staging, part usage, and other functions.
 
+## Information Endpoints
+
+These endpoints return state information; all respond with JSON.
+
+- /rocket_sim
+  - Description: Simulation snapshot (position, velocity, rotation, orbit, throttle, parentPlanetCode, etc.).
+  - Query: rocketIdOrName (optional)
+  - HTTP example:
+    ```http
+    GET /rocket_sim
+    ```
+
+- /rocket
+  - Description: Rocket save info (structure, parts, location, velocity, RCS, throttlePercent, etc.).
+  - Query: rocketIdOrName (optional)
+  - HTTP example:
+    ```http
+    GET /rocket?rocketIdOrName=0
+    ```
+
+- /rockets
+  - Description: List of all rockets' save info in the current scene.
+  - HTTP example:
+    ```http
+    GET /rockets
+    ```
+
+- /planet
+  - Description: Planet info (radius, gravity, atmosphere, orbit, landmarks, etc.).
+  - Query: codename (optional; defaults to current context)
+  - HTTP example:
+    ```http
+    GET /planet?codename=Earth
+    ```
+
+- /planets
+  - Description: All planets' info.
+  - HTTP example:
+    ```http
+    GET /planets
+    ```
+
+- /other
+  - Description: Misc info (targetAngle, quicksaves, navTarget, timewarpSpeed, worldTime, mass, thrust, TWR, etc.).
+  - Query: rocketIdOrName (optional)
+  - HTTP example:
+    ```http
+    GET /other
+    ```
+
+- /mission
+  - Description: Mission/Challenge related info.
+  - HTTP example:
+    ```http
+    GET /mission
+    ```
+
+- /debuglog
+  - Description: Collected in-game console logs.
+  - HTTP example:
+    ```http
+    GET /debuglog
+    ```
+
+- /version
+  - Description: SFSControl mod version info.
+  - HTTP example:
+    ```http
+    GET /version
+    ```
+  - Response example:
+    ```json
+    {"name":"SFSControl","version":"1.2"}
+    ```
+  - Python example:
+    ```python
+    import requests
+    print(requests.get("http://127.0.0.1:27772/version").json())
+    ```
+
 ## Methods
 
 ### Rotate
@@ -110,7 +190,11 @@ Controls main engine on/off.
 Controls RCS thrust in specific direction.
 
 **Parameters:**
-- `direction` (string): Thrust direction ("up", "down", "left", "right", "forward", "backward")
+- `direction` (string): Thrust direction
+  - `"up"` - Upward thrust
+  - `"down"` - Downward thrust
+  - `"left"` - Leftward thrust
+  - `"right"` - Rightward thrust
 - `seconds` (float): Duration in seconds
 - `rocketIdOrName` (string/int, optional): Target rocket ID or name
 
@@ -134,7 +218,7 @@ Sets rocket rotation to specific angle.
 
 ### SetState
 
-Sets rocket state (position, velocity, etc.).
+Sets rocket state (position, velocity, angular velocity, blueprint data).
 
 **Parameters:**
 - `x` (double, optional): X position
@@ -447,6 +531,14 @@ Enables/disables cheats.
 
 **Parameters:**
 - `cheatName` (string): Name of cheat
+  - `"infiniteFuel"` - Infinite fuel
+  - `"infiniteBuildArea"` - Infinite build area
+  - `"noGravity"` - No gravity
+  - `"noAtmosphericDrag"` - No atmospheric drag
+  - `"noHeatDamage"` - No heat damage
+  - `"noBurnMarks"` - No burn marks
+  - `"partClipping"` - Part clipping
+  - `"unbreakableParts"` - Unbreakable parts
 - `value` (bool): True to enable, false to disable
 
 **Example:**
@@ -460,6 +552,10 @@ Reverts to previous state.
 
 **Parameters:**
 - `type` (string): Revert type
+  - `"launch"` - Revert to launch
+  - `"30s"` - Revert 30 seconds
+  - `"3min"` - Revert 3 minutes
+  - `"build"` - Revert to build
 
 **Example:**
 ```json
@@ -483,7 +579,9 @@ Completes a challenge.
 Waits for specific window to appear.
 
 **Parameters:**
-- `mode` (string, optional): Window mode ("transfer", etc.)
+- `mode` (string, optional): Window mode
+  - `"transfer"` - Transfer window (default)
+  - `"rendezvous"` - Rendezvous window
 - `parameter` (double, optional): Window parameter
 
 **Example:**
@@ -521,12 +619,19 @@ Logs a message.
 Manages quicksave operations.
 
 **Parameters:**
-- `operation` (string, optional): Operation type ("save", "load", etc.)
+- `operation` (string, optional): Operation type
+  - `"save"` - Save quicksave
+  - `"load"` - Load quicksave
+  - `"delete"` - Delete quicksave
+  - `"rename"` - Rename quicksave (format: "oldName:newName")
 - `name` (string, optional): Save name
 
-**Example:**
+**Examples:**
 ```json
 {"method": "QuicksaveManager", "args": ["save", "quicksave1"]}
+{"method": "QuicksaveManager", "args": ["load", "quicksave1"]}
+{"method": "QuicksaveManager", "args": ["delete", "quicksave1"]}
+{"method": "QuicksaveManager", "args": ["rename", "oldName:newName"]}
 ```
 
 ### SetMapIconColor
@@ -542,35 +647,63 @@ Sets map icon color.
 {"method": "SetMapIconColor", "args": ["255,0,0,255", 0]}
 ```
 
-### GetRocketInfo
 
-Retrieves information about the current or specified rocket.
 
-**Parameters:**
-- `rocketIdOrName` (string/int, optional): Target rocket ID or name
+## Draw API
 
-**Example:**
+Draw simple persistent shapes in world space via HTTP. Shapes remain rendered every frame until cleared.
+
+- Endpoint: `POST /draw`
+- Body: JSON
+- Coordinates: World space (not screen space). Internally converted using `WorldView` position offset.
+- Persistence: Commands are stored and redrawn until `cmd: "clear"` is sent.
+- Ordering: Use `sorting` or alias `layer` (float, default 1) to control draw order.
+- Color: Array `[r,g,b,a]` with each component in 0-1, default `[1,1,1,1]`.
+
+Supported commands:
+- `cmd: "line"` draw a line segment
+- `cmd: "circle"` draw a circle outline
+- `cmd: "clear"` clear all previously drawn items
+- `cmd: "text"` not supported (returns HTTP 400)
+
+### Draw a line
+
+Parameters:
+- `start`: `[x,y]` or `[x,y,z]`
+- `end`: `[x,y]` or `[x,y,z]`
+- `color` (optional): `[r,g,b,a]`
+- `width` (optional): float
+- `sorting` or `layer` (optional): float
+
+Example:
 ```json
-{"method": "GetRocketInfo", "args": [0]}
+{ "cmd": "line", "start": [0, 0, 0], "end": [1000, 500, 0], "color": [1, 0, 0, 1], "width": 2.0, "sorting": 1 }
 ```
 
-### GetRocketList
+### Draw a circle
 
-Returns a list of all available rockets in the current scene.
+Parameters:
+- `center`: `[x,y]`
+- `radius`: float
+- `resolution` (optional): integer segments, minimum 8 (default 64)
+- `color` (optional): `[r,g,b,a]`
+- `sorting` or `layer` (optional): float
 
-**Example:**
+Example:
 ```json
-{"method": "GetRocketList", "args": []}
+{ "cmd": "circle", "center": [5000, -2000], "radius": 300, "resolution": 64, "color": [0, 1, 0, 0.8], "layer": 2 }
 ```
 
-### GetWorldInfo
+### Clear drawings
 
-Retrieves information about the current world state.
-
-**Example:**
+Example:
 ```json
-{"method": "GetWorldInfo", "args": []}
+{ "cmd": "clear" }
 ```
+
+Notes:
+- `cmd: "text"` is not implemented in the current GL-only renderer and will return `{ "error": "text not supported" }` with HTTP 400.
+- All coordinates must be world-space coordinates.
 
 ## Usage Notes
 
@@ -580,3 +713,12 @@ Retrieves information about the current world state.
 - Target mode requires a selected target in the game
 - Custom angles are specified in degrees (0-360)
 - Offset values are added to the base rotation angle
+
+
+## Acknowledgements
+
+Special thanks to [Smart SAS Mod for SFS](https://github.com/AstroTheRabbit/Smart-SAS-Mod-SFS) for providing rotation control references.
+
+Additional scripts for SFSControl can be found at [SFSControl-_-Scripts](https://github.com/SFSPlayer-sys/SFSControl-_-Scripts).
+
+We provided a Python client [PySFS](https://github.com/SFSPlayer-sys/PySFS).

@@ -189,6 +189,112 @@ namespace SFSControl
                 //Debug.Log("[Server] Entering switch for: " + context.Request.Url.AbsolutePath);
                 switch (request.Url.AbsolutePath)
                 {
+                    case "/draw":
+                        try
+                        {
+                            DrawManager.Ensure();
+                            string drawBody;
+                            using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                                drawBody = reader.ReadToEnd();
+
+                            var dict = JsonConvert.DeserializeObject<Dictionary<string, object>>(drawBody) ?? new Dictionary<string, object>();
+                            string cmd = dict.ContainsKey("cmd") ? dict["cmd"]?.ToString() ?? "" : "";
+                            if (string.Equals(cmd, "clear", StringComparison.OrdinalIgnoreCase))
+                            {
+                                DrawManager.main.Enqueue(new DrawCommand { type = DrawCommandType.Clear });
+                                responseString = JsonConvert.SerializeObject(new { result = "cleared" });
+                                break;
+                            }
+
+                            if (string.Equals(cmd, "line", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var dc = new DrawCommand { type = DrawCommandType.Line };
+                                // start/end: [x,y] or [x,y,z]
+                                if (dict.ContainsKey("start"))
+                                {
+                                    var arr = (dict["start"] as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray();
+                                    dc.start = new Vector3(
+                                        arr.Count > 0 ? (float)Convert.ToDouble(arr[0]) : 0f,
+                                        arr.Count > 1 ? (float)Convert.ToDouble(arr[1]) : 0f,
+                                        arr.Count > 2 ? (float)Convert.ToDouble(arr[2]) : 0f
+                                    );
+                                }
+                                if (dict.ContainsKey("end"))
+                                {
+                                    var arr = (dict["end"] as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray();
+                                    dc.end = new Vector3(
+                                        arr.Count > 0 ? (float)Convert.ToDouble(arr[0]) : 0f,
+                                        arr.Count > 1 ? (float)Convert.ToDouble(arr[1]) : 0f,
+                                        arr.Count > 2 ? (float)Convert.ToDouble(arr[2]) : 0f
+                                    );
+                                }
+                                if (dict.ContainsKey("color"))
+                                {
+                                    var arr = (dict["color"] as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray();
+                                    float r = arr.Count > 0 ? (float)Convert.ToDouble(arr[0]) : 1f;
+                                    float g = arr.Count > 1 ? (float)Convert.ToDouble(arr[1]) : 1f;
+                                    float b = arr.Count > 2 ? (float)Convert.ToDouble(arr[2]) : 1f;
+                                    float a = arr.Count > 3 ? (float)Convert.ToDouble(arr[3]) : 1f;
+                                    dc.color = new UnityEngine.Color(r, g, b, a);
+                                }
+                                if (dict.ContainsKey("width")) dc.width = (float)Convert.ToDouble(dict["width"]);
+                                // support alias 'layer' for sorting order
+                                if (dict.ContainsKey("layer")) dc.sortingOrder = (float)Convert.ToDouble(dict["layer"]);
+                                if (dict.ContainsKey("sorting")) dc.sortingOrder = (float)Convert.ToDouble(dict["sorting"]);
+                                DrawManager.main.Enqueue(dc);
+                                responseString = JsonConvert.SerializeObject(new { result = "ok" });
+                                break;
+                            }
+
+                            if (string.Equals(cmd, "circle", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var dc = new DrawCommand { type = DrawCommandType.Circle };
+                                if (dict.ContainsKey("center"))
+                                {
+                                    var arr = (dict["center"] as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray();
+                                    dc.center = new Vector2(
+                                        arr.Count > 0 ? (float)Convert.ToDouble(arr[0]) : 0f,
+                                        arr.Count > 1 ? (float)Convert.ToDouble(arr[1]) : 0f
+                                    );
+                                }
+                                if (dict.ContainsKey("radius")) dc.radius = (float)Convert.ToDouble(dict["radius"]);
+                                if (dict.ContainsKey("resolution")) dc.resolution = Math.Max(8, Convert.ToInt32(dict["resolution"]));
+                                if (dict.ContainsKey("color"))
+                                {
+                                    var arr = (dict["color"] as Newtonsoft.Json.Linq.JArray) ?? new Newtonsoft.Json.Linq.JArray();
+                                    float r = arr.Count > 0 ? (float)Convert.ToDouble(arr[0]) : 1f;
+                                    float g = arr.Count > 1 ? (float)Convert.ToDouble(arr[1]) : 1f;
+                                    float b = arr.Count > 2 ? (float)Convert.ToDouble(arr[2]) : 1f;
+                                    float a = arr.Count > 3 ? (float)Convert.ToDouble(arr[3]) : 1f;
+                                    dc.color = new UnityEngine.Color(r, g, b, a);
+                                }
+                                if (dict.ContainsKey("layer")) dc.sortingOrder = (float)Convert.ToDouble(dict["layer"]);
+                                if (dict.ContainsKey("sorting")) dc.sortingOrder = (float)Convert.ToDouble(dict["sorting"]);
+                                DrawManager.main.Enqueue(dc);
+                                responseString = JsonConvert.SerializeObject(new { result = "ok" });
+                                break;
+                            }
+
+                            if (string.Equals(cmd, "text", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Text not supported in GL-only mode
+                                statusCode = 400;
+                                responseString = JsonConvert.SerializeObject(new { error = "text not supported" });
+                                break;
+                            }
+
+                            statusCode = 400;
+                            responseString = JsonConvert.SerializeObject(new { error = "unknown cmd" });
+                        }
+                        catch (Exception ex)
+                        {
+                            statusCode = 500;
+                            responseString = JsonConvert.SerializeObject(new { error = ex.Message });
+                        }
+                        break;
+                    case "/version":
+                        responseString = JsonConvert.SerializeObject(new { name = "SFSControl", version = Main.VERSION });
+                        break;
                     case "/screenshot":
                         // 检查设置是否已加载
                         if (SettingsManager.settings == null)

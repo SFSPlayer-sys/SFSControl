@@ -9,7 +9,7 @@ namespace SFSControl
     public class ModSettingsConfig
     {
         public int port = 27772; // 端口
-        public bool allowScreenshot = false; // 是否允许截屏（默认关闭）
+        public bool allowScreenshot = false; // 是否允许截屏
     }
 
     public static class SettingsManager
