@@ -13,7 +13,7 @@ namespace SFSControl
 
     public class Main : ModLoader.Mod
     {
-        public const string VERSION = "1.2";
+        public const string VERSION = "1.3";
         public override string ModNameID => "SFSControl";
         public override string DisplayName => "SFSControl";
         public override string Author => "SFSGamer"; 

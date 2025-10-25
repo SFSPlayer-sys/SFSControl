@@ -101,11 +101,23 @@ Controls rocket rotation using various modes and custom angles.
 - `offset` (float): Angle offset in degrees
 - `rocketIdOrName` (string/int, optional): Target rocket ID or name
 
-**Example:**
+**Examples:**
 ```json
-{"method": "Rotate", "args": ["Prograde", 0, 0]}
-{"method": "Rotate", "args": [90, 0, 0]}
-{"method": "Rotate", "args": ["Target", 15, 0]}
+// 基本旋转模式
+{"method": "Rotate", "args": ["Prograde", 0, 0]} 
+{"method": "Rotate", "args": ["Surface", 0, 0]}
+{"method": "Rotate", "args": ["Target", 0, 0]}
+{"method": "Rotate", "args": ["None", 0, 0]}
+{"method": "Rotate", "args": ["Default", 0, 0]}
+{"method": "Rotate", "args": ["Prograde", 15, 0]}
+{"method": "Rotate", "args": ["Target", -30, 0]}
+{"method": "Rotate", "args": ["rocket:Rocket2", 0, 0]}
+{"method": "Rotate", "args": ["rocket:1", 0, 0]}
+{"method": "Rotate", "args": ["planet:Mars", 0, 0]}
+{"method": "Rotate", "args": ["planet:Moon", 0, 0]}
+{"method": "Rotate", "args": ["coord:1000,2000", 0, 0]}
+{"method": "Rotate", "args": ["coord:5000,3000,Mars", 0, 0]}
+{"method": "Rotate", "args": ["Prograde", 0, "Rocket1"]}
 ```
 
 ### StopRotate
@@ -129,9 +141,19 @@ Controls rocket throttle level.
 - `size` (double): Throttle level (0.0 to 1.0)
 - `rocketIdOrName` (string/int, optional): Target rocket ID or name
 
-**Example:**
+**Examples:**
 ```json
+{"method": "SetThrottle", "args": [0.0, 0]}
 {"method": "SetThrottle", "args": [0.5, 0]}
+{"method": "SetThrottle", "args": [1.0, 0]}
+
+{"method": "SetThrottle", "args": [0.1, 0]}
+{"method": "SetThrottle", "args": [0.25, 0]}
+{"method": "SetThrottle", "args": [0.75, 0]}
+{"method": "SetThrottle", "args": [0.9, 0]}
+
+{"method": "SetThrottle", "args": [0.5, "Rocket1"]}
+{"method": "SetThrottle", "args": [1.0, 1]}
 ```
 
 ### SetRCS
@@ -198,9 +220,17 @@ Controls RCS thrust in specific direction.
 - `seconds` (float): Duration in seconds
 - `rocketIdOrName` (string/int, optional): Target rocket ID or name
 
-**Example:**
+**Examples:**
 ```json
-{"method": "RcsThrust", "args": ["up", 2.0, 0]}
+{"method": "RcsThrust", "args": ["up", 1.0, 0]}
+{"method": "RcsThrust", "args": ["down", 2.0, 0]}
+{"method": "RcsThrust", "args": ["left", 0.5, 0]}
+{"method": "RcsThrust", "args": ["right", 1.5, 0]}
+{"method": "RcsThrust", "args": ["up", 5.0, 0]}
+{"method": "RcsThrust", "args": ["down", 10.0, 0]}
+{"method": "RcsThrust", "args": ["left", 0.1, 0]}   
+{"method": "RcsThrust", "args": ["up", 2.0, "Rocket1"]}
+{"method": "RcsThrust", "args": ["down", 1.0, 1]}
 ```
 
 ### SetRotation
@@ -211,10 +241,13 @@ Sets rocket rotation to specific angle.
 - `angle` (float): Target angle in degrees
 - `rocketIdOrName` (string/int, optional): Target rocket ID or name
 
-**Example:**
+**Examples:**
 ```json
-{"method": "SetRotation", "args": [90, 0]}
-```
+
+{"method": "SetRotation", "args": [0, 0]}      
+{"method": "SetRotation", "args": [90, 0]}     
+{"method": "SetRotation", "args": [180, 0]}   
+{"method": "SetRotation", "args": [270, 0]}    
 
 ### SetState
 
@@ -718,6 +751,8 @@ Notes:
 ## Acknowledgements
 
 Special thanks to [Smart SAS Mod for SFS](https://github.com/AstroTheRabbit/Smart-SAS-Mod-SFS) for providing rotation control references.
+
+The drop point prediction feature comes from[Aero Trajectory](https://github.com/AstroTheRabbit/Aero-Trajectory-SFS)
 
 Additional scripts for SFSControl can be found at [SFSControl-_-Scripts](https://github.com/SFSPlayer-sys/SFSControl-_-Scripts).
 

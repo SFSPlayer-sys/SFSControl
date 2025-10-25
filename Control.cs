@@ -25,6 +25,10 @@ namespace SFSControl
         Prograde,
         Target,
         Surface,
+        Rocket,
+        Planet,
+        Coordinate,
+        Angle,
         None,
         Default
     }
@@ -35,6 +39,11 @@ namespace SFSControl
         public float Offset = 0f;
         public float TargetAngle = 0f;
         public string ModeDescription = "";
+        public string TargetRocketIdOrName = null;
+        public string TargetPlanetCode = null;
+        public double? TargetCoordX = null;
+        public double? TargetCoordY = null;
+        public string TargetCoordPlanetCode = null;
 
         void FixedUpdate()
         {
@@ -76,7 +85,11 @@ namespace SFSControl
                 if (mass > 200f)
                     torque /= Mathf.Pow(mass / 200f, 0.35f);
                 
-                float maxAcceleration = torque * Mathf.Rad2Deg / mass;
+                float maxAcceleration = mass > 0f ? torque * Mathf.Rad2Deg / mass : 0f;
+                if (Mathf.Abs(maxAcceleration) < 1e-6f)
+                    return -Mathf.Sign(deltaAngle);
+                if (Mathf.Abs(angularVelocity) < 1e-6f)
+                    return -Mathf.Sign(deltaAngle);
                 float stoppingTime = Mathf.Abs(angularVelocity / maxAcceleration);
                 float currentTime = Mathf.Abs(deltaAngle / angularVelocity);
                 
@@ -117,12 +130,80 @@ namespace SFSControl
                     Double2 rocketPosition = rocket.location.position.Value;
                     Double2 directionToTarget = targetPosition - rocketPosition;
                     
-                    if (directionToTarget.magnitude <= 0.1)
-                        return;
-                    
                     float targetAngle = NormalizeAngle((float)Math.Atan2(directionToTarget.y, directionToTarget.x) * Mathf.Rad2Deg);
                     result = TargetRotationToTorque(targetAngle);
                     break;
+
+                case DirectionMode.Rocket:
+                {
+                    // 面向指定火箭（世界坐标）
+                    SFS.World.Rocket targetRocket = null;
+                    if (!string.IsNullOrEmpty(TargetRocketIdOrName))
+                    {
+                        targetRocket = Control.FindRocket(TargetRocketIdOrName);
+                    }
+                    if (targetRocket == null)
+                        return;
+                    Vector3 dir = targetRocket.transform.position - rocket.transform.position;
+                    float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                    result = TargetRotationToTorque(NormalizeAngle(ang));
+                    break;
+                }
+
+                case DirectionMode.Planet:
+                {
+                    // 面向星球地心
+                    Planet planet = null;
+                    if (!string.IsNullOrEmpty(TargetPlanetCode))
+                    {
+                        planet = SFS.Base.planetLoader?.planets?.Values.FirstOrDefault(p => p != null && (
+                            p.codeName.Equals(TargetPlanetCode, StringComparison.OrdinalIgnoreCase) ||
+                            (p.DisplayName != null && p.DisplayName.ToString().Equals(TargetPlanetCode, StringComparison.OrdinalIgnoreCase))
+                        ));
+                    }
+                    else
+                    {
+                        planet = rocket.location?.Value?.planet;
+                    }
+                    if (planet == null)
+                        return;
+                    Vector3 dir = planet.transform.position - rocket.transform.position;
+                    float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                    result = TargetRotationToTorque(NormalizeAngle(ang));
+                    break;
+                }
+
+                case DirectionMode.Coordinate:
+                {
+                    if (!TargetCoordX.HasValue || !TargetCoordY.HasValue)
+                        return;
+                    Planet planet = null;
+                    if (!string.IsNullOrEmpty(TargetCoordPlanetCode))
+                    {
+                        planet = SFS.Base.planetLoader?.planets?.Values.FirstOrDefault(p => p != null && (
+                            p.codeName.Equals(TargetCoordPlanetCode, StringComparison.OrdinalIgnoreCase) ||
+                            (p.DisplayName != null && p.DisplayName.ToString().Equals(TargetCoordPlanetCode, StringComparison.OrdinalIgnoreCase))
+                        ));
+                    }
+                    if (planet == null)
+                    {
+                        planet = rocket.location?.Value?.planet;
+                    }
+                    if (planet == null)
+                        return;
+                    Vector3 worldPoint = planet.transform.position + new Vector3((float)TargetCoordX.Value, (float)TargetCoordY.Value, 0f);
+                    Vector3 dir = worldPoint - rocket.transform.position;
+                    float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+                    result = TargetRotationToTorque(NormalizeAngle(ang));
+                    break;
+                }
+
+                case DirectionMode.Angle:
+                {
+                    float ang = NormalizeAngle(TargetAngle);
+                    result = TargetRotationToTorque(ang);
+                    break;
+                }
 
                 case DirectionMode.None:
                     rocket.rb2d.angularDrag = 0;
@@ -225,14 +306,31 @@ namespace SFSControl
                 if (rocket.staging.stages.Count > 0)
                 {
                     var stage = rocket.staging.stages[0];
+                    var sharedData = new SFS.Parts.UsePartData.SharedData(true);
+                    var usePartData = new SFS.Parts.UsePartData(sharedData, null);
+                    
                     // 依次触发分级内所有部件的 onPartUsed
                     foreach (var part in stage.parts.ToArray())
                     {
                         if (part != null && part.onPartUsed != null && part.onPartUsed.GetPersistentEventCount() > 0)
                         {
-                            part.onPartUsed.Invoke(new SFS.Parts.UsePartData(new SFS.Parts.UsePartData.SharedData(true), null));
+                            part.onPartUsed.Invoke(usePartData);
                         }
                     }
+                    
+                    // 重要修复：调用 onPostPartsActivation 回调以应用分离力
+                    if (sharedData.onPostPartsActivation != null)
+                    {
+                        try
+                        {
+                            sharedData.onPostPartsActivation.Invoke();
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Debug.LogError($"[Control] Stage onPostPartsActivation error: {ex.Message}");
+                        }
+                    }
+                    
                     return "Success";
                 }
                 Debug.LogError("[Control] Stage: No stage available");
@@ -294,7 +392,7 @@ namespace SFSControl
             // 设置SAS参数
             if (float.TryParse(modeOrAngle.ToString(), out float directAngle))
             {
-                sasComponent.Direction = DirectionMode.Default;
+                sasComponent.Direction = DirectionMode.Angle;
                 sasComponent.TargetAngle = directAngle + offset;
                 sasComponent.ModeDescription = $"{directAngle}°";
             }
@@ -314,7 +412,109 @@ namespace SFSControl
             }
             else
             {
-                return "Error: Invalid mode or angle. Use: Prograde, Target, Surface, None, Default, or a number for angle";
+                // 扩展模式："rocket:<idOrName>" / "planet:<codeName>" / "coord:x,y[,planet]"
+                string s = modeOrAngle.ToString();
+                if (!string.IsNullOrEmpty(s))
+                {
+                    var parts = s.Split(new char[] { ':' }, 2);
+                    string key = parts[0].Trim();
+                    string value = parts.Length > 1 ? parts[1].Trim() : null;
+
+                    if (key.Equals("rocket", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 计算目标角度并转为一次性角度模式
+                        SFS.World.Rocket targetRocket = null;
+                        if (!string.IsNullOrEmpty(value))
+                            targetRocket = Control.FindRocket(value);
+                        if (targetRocket == null)
+                            return "Error: Target rocket not found";
+                        // 使用SFS物理坐标（Double2）计算角度
+                        Double2 origin = rocket.location?.position?.Value ?? Double2.zero;
+                        Double2 targetPos = targetRocket.location?.position?.Value ?? Double2.zero;
+                        Double2 dir = targetPos - origin;
+                        float ang = (float)(Math.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
+                        sasComponent.Direction = DirectionMode.Angle;
+                        sasComponent.TargetAngle = Mathf.DeltaAngle(0f, ang + offset);
+                        sasComponent.ModeDescription = value == null ? "rocket" : $"rocket:{value}";
+                    }
+                    else if (key.Equals("planet", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Planet planet = null;
+                        if (!string.IsNullOrEmpty(value))
+                        {
+                            planet = SFS.Base.planetLoader?.planets?.Values.FirstOrDefault(p => p != null && (
+                                p.codeName.Equals(value, StringComparison.OrdinalIgnoreCase) ||
+                                (p.DisplayName != null && p.DisplayName.ToString().Equals(value, StringComparison.OrdinalIgnoreCase))
+                            ));
+                        }
+                        if (planet == null)
+                        {
+                            var r = PlayerController.main?.player?.Value as Rocket;
+                            planet = r?.location?.Value?.planet;
+                        }
+                        if (planet == null)
+                            return "Error: Planet not found";
+                        // 按要求基于火箭坐标与(0,0)（SFS世界原点）计算
+                        Double2 origin = rocket.location?.position?.Value ?? Double2.zero;
+                        Double2 dir = Double2.zero - origin;
+                        float ang = (float)(Math.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
+                        sasComponent.Direction = DirectionMode.Angle;
+                        sasComponent.TargetAngle = Mathf.DeltaAngle(0f, ang + offset);
+                        sasComponent.ModeDescription = value == null ? "planet" : $"planet:{value}";
+                    }
+                    else if (key.Equals("coord", StringComparison.OrdinalIgnoreCase))
+                    {
+                        double px, py; string pcode = null;
+                        if (!string.IsNullOrEmpty(value))
+                        {
+                            var arr = value.Split(',');
+                            if (arr.Length >= 2 && double.TryParse(arr[0], out px) && double.TryParse(arr[1], out py))
+                            {
+                                if (arr.Length >= 3)
+                                    pcode = arr[2].Trim();
+                                Planet planet = null;
+                                if (!string.IsNullOrEmpty(pcode))
+                                {
+                                    planet = SFS.Base.planetLoader?.planets?.Values.FirstOrDefault(q => q != null && (
+                                        q.codeName.Equals(pcode, StringComparison.OrdinalIgnoreCase) ||
+                                        (q.DisplayName != null && q.DisplayName.ToString().Equals(pcode, StringComparison.OrdinalIgnoreCase))
+                                    ));
+                                }
+                                if (planet == null)
+                                {
+                                    var r = PlayerController.main?.player?.Value as Rocket;
+                                    planet = r?.location?.Value?.planet;
+                                }
+                                if (planet == null)
+                                    return "Error: Planet not found for coord";
+                                // 使用SFS世界坐标与火箭SFS坐标计算
+                                Double2 worldPoint = new Double2(px, py);
+                                Double2 origin = rocket.location?.position?.Value ?? Double2.zero;
+                                Double2 dir = worldPoint - origin;
+                                float ang = (float)(Math.Atan2(dir.y, dir.x) * Mathf.Rad2Deg);
+                                sasComponent.Direction = DirectionMode.Angle;
+                                sasComponent.TargetAngle = Mathf.DeltaAngle(0f, ang + offset);
+                                sasComponent.ModeDescription = pcode == null ? $"coord:{px},{py}" : $"coord:{px},{py},{pcode}";
+                            }
+                            else
+                            {
+                                return "Error: coord expects 'coord:x,y' or 'coord:x,y,planetCode'";
+                            }
+                        }
+                        else
+                        {
+                            return "Error: coord expects 'coord:x,y' or 'coord:x,y,planetCode'";
+                        }
+                    }
+                    else
+                    {
+                        return "Error: Invalid mode or angle. Use: Prograde, Target, Surface, Rocket, Planet, Coordinate, None, Default, or number/rocket:/planet:/coord:";
+                    }
+                }
+                else
+                {
+                    return "Error: Invalid mode or angle. Use: Prograde, Target, Surface, Rocket, Planet, Coordinate, None, Default, or number/rocket:/planet:/coord:";
+                }
             }
             
             string offsetText = offset != 0 ? $" with {offset}° offset" : "";
@@ -343,7 +543,24 @@ namespace SFSControl
                 {
                     try
                     {
-                        part.onPartUsed.Invoke(new SFS.Parts.UsePartData(new SFS.Parts.UsePartData.SharedData(false), null));
+                        var sharedData = new SFS.Parts.UsePartData.SharedData(false);
+                        var usePartData = new SFS.Parts.UsePartData(sharedData, null);
+                        
+                        part.onPartUsed.Invoke(usePartData);
+                        
+                        // 重要修复：调用 onPostPartsActivation 回调以应用分离力
+                        if (sharedData.onPostPartsActivation != null)
+                        {
+                            try
+                            {
+                                sharedData.onPostPartsActivation.Invoke();
+                            }
+                            catch (System.Exception ex)
+                            {
+                                Debug.LogError($"[Control] UsePart onPostPartsActivation error: {ex.Message}");
+                            }
+                        }
+                        
                         return "Success";
                     }
                     catch (System.Exception ex)
@@ -1591,14 +1808,22 @@ namespace SFSControl
                     return "Error: Blueprint has no parts";
                 }
 
-                // 创建部件
+                // 创建部件（使用占位以保持结构完整）
                 OwnershipState[] ownershipStates;
-                Part[] parts = PartsLoader.CreateParts(blueprint.parts, null, null, OnPartNotOwned.Allow, out ownershipStates);
-                
+                Part[] parts = PartsLoader.CreateParts(blueprint.parts, null, null, OnPartNotOwned.UsePlaceholder, out ownershipStates);
+
                 if (parts == null || parts.Length == 0)
                 {
                     Debug.LogError("[Control] CreateRocket: Failed to create parts from blueprint");
                     return "Error: Failed to create parts from blueprint";
+                }
+
+                // 过滤掉创建失败的空部件
+                var validParts = parts.Where(p => p != null).ToArray();
+                if (validParts.Length == 0)
+                {
+                    Debug.LogError("[Control] CreateRocket: All parts are null after creation");
+                    return "Error: Blueprint parts invalid";
                 }
 
                 // 检查是否有未拥有的部件
@@ -1608,13 +1833,42 @@ namespace SFSControl
                     Debug.LogWarning("[Control] CreateRocket: Some parts are not owned, using placeholders");
                 }
 
-                // 创建关节组
-                var jointGroup = new JointGroup(new List<PartJoint>(), parts.ToList());
+                // 将部件摆放到合理位置（基于世界坐标转本地坐标），以便后续生成关节
+                try
+                {
+                    Vector2 localSpawn = WorldView.ToLocalPosition(new Double2(x, y));
+                    Part_Utility.PositionParts(localSpawn, new Vector2(0.5f, 0f), true, true, validParts);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Control] CreateRocket: PositionParts failed, continuing: {ex.Message}");
+                }
 
-                // 计算火箭位置（相对于星球中心）
-                Vector2 planetPosition = new Vector2((float)x, (float)y);
-                Vector2 globalPosition = (Vector2)planet.transform.position + planetPosition;
-                
+                // 通过反射调用 RocketManager.GenerateJoints 生成正确的关节连接
+                List<PartJoint> generatedJoints = new List<PartJoint>();
+                try
+                {
+                    var rmType = typeof(RocketManager);
+                    var genMethod = rmType.GetMethod("GenerateJoints", BindingFlags.NonPublic | BindingFlags.Static);
+                    if (genMethod != null)
+                    {
+                        var jointsObj = genMethod.Invoke(null, new object[] { validParts });
+                        if (jointsObj is List<PartJoint> list)
+                            generatedJoints = list;
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[Control] CreateRocket: GenerateJoints not found via reflection, joints may be missing");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Control] CreateRocket: GenerateJoints reflection failed: {ex.Message}");
+                }
+
+                // 创建关节组（包含生成的关节与部件）
+                var jointGroup = new JointGroup(generatedJoints, validParts.ToList());
+
                 // 创建位置对象
                 Location location = new Location(planet, new Double2(x, y), new Double2(vx, vy));
 

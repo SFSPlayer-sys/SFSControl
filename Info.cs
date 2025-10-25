@@ -12,9 +12,207 @@ using System.IO;
 using System;
 using SFS.IO;
 using ModLoader.IO;
+using System.Reflection;
+using SFS.World.Drag;
+using SFS.World.Maps;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SFSControl
 {
+    // 用于计算火箭在大气层中的落点
+    public class TrajectorySimulation
+    {
+        public Planet planet;
+        readonly float dragCoefficient;
+        readonly float? glidingHeatshields_dragCoefficient;
+        readonly float heatingConst_num4;
+        Vector2 currentPos;
+        Vector2 currentVel;
+        Vector2 currentAcc;
+        float currentTemp;
+        bool enteredAtmosphere;
+        
+        // 仿真参数
+        readonly float stepSize;
+        readonly int maxSteps;
+        int currentStep;
+
+        public TrajectorySimulation(Rocket player, Location startLocation, float angle)
+        {
+            List<Surface> exposedSurfaces = GetExposedSurfaces(player, angle);
+            Location location = startLocation;
+
+            planet = location.planet;
+            dragCoefficient = 1.5f * GetDragCoefficent(exposedSurfaces) / player.mass.GetMass();
+            currentPos = location.position.ToVector2;
+            currentVel = location.velocity.ToVector2;
+            currentAcc = GetAcceleration(currentPos, currentVel);
+
+            try
+            {
+                HeatModuleBase heatModule = player.aero.heatManager.GetMostHeatedModules(1).First();
+                currentTemp = float.IsNegativeInfinity(heatModule.Temperature) ? 0f : heatModule.Temperature;
+                heatingConst_num4 = 1f + Mathf.Log10(heatModule.ExposedSurface + 1f);
+            }
+            catch (InvalidOperationException)
+            {
+                currentTemp = 0f;
+                heatingConst_num4 = 1f;
+            }
+
+            enteredAtmosphere = false;
+            glidingHeatshields_dragCoefficient = null;
+            
+            // 从设置中获取仿真参数
+            stepSize = SettingsManager.settings.simulationStepSize;
+            maxSteps = SettingsManager.settings.simulationMaxSteps;
+            currentStep = 0;
+        }
+
+        public Vector2? Step(out Color trajectoryColor)
+        {
+            trajectoryColor = Color.white;
+            
+            // 检查是否超过最大步数
+            if (currentStep >= maxSteps)
+            {
+                return null;
+            }
+            
+            float currentRadius = currentPos.magnitude;
+            if (currentRadius <= (float)planet.Radius)
+            {
+                return null;
+            }
+
+            // 检查是否进入大气层（如果有的话）
+            if (planet.HasAtmospherePhysics && IsInsideAtmosphere(planet, currentRadius))
+                enteredAtmosphere = true;
+            
+            // 如果进入过大气层但现在不在大气层中，且星球有大气层，则逃逸
+            if (enteredAtmosphere && planet.HasAtmospherePhysics && !IsInsideAtmosphere(planet, currentRadius))
+            {
+                return null;
+            }
+
+            float dt = stepSize; // 使用设置中的仿真步长
+            Vector2 newPos = currentPos + (currentVel * dt) + (0.5f * currentAcc * dt * dt);
+            Vector2 newAcc = GetAcceleration(currentPos, currentVel);
+            Vector2 newVel = currentVel + (0.5f * dt * (currentAcc + newAcc));
+            currentPos = newPos;
+            currentVel = newVel;
+            currentAcc = newAcc;
+            
+            currentStep++; // 增加步数计数
+
+            // 只有在有大气层时才更新热效应
+            if (planet.HasAtmospherePhysics)
+                UpdateHeating(dt);
+            
+            return currentPos;
+        }
+
+        public static bool IsInsideAtmosphere(Planet planet, double radius)
+        {
+            if (planet.data.hasAtmospherePhysics)
+            {
+                return radius < planet.data.basics.radius + planet.data.atmospherePhysics.height;
+            }
+            return false;
+        }
+
+        public static float GetDragCoefficent(List<Surface> exposedSurfaces)
+        {
+            return (
+                ((float, Vector2))typeof(AeroModule)
+                    .GetMethod("CalculateDragForce", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new[] { exposedSurfaces })
+                )
+                .Item1;
+        }
+
+        public static List<Surface> GetExposedSurfaces(Rocket player, float angle)
+        {
+            return AeroModule.GetExposedSurfaces(Aero_Rocket.GetDragSurfaces(player.partHolder, Matrix2x2.Angle(-angle)));
+        }
+
+        Vector2 GetAcceleration(Vector2 pos, Vector2 vel)
+        {
+            return GetDragAcceleration(pos, vel) + GetGravitationalAcceleration(pos) + GetGlidingHeatshieldsAcceleration(pos, vel);
+        }
+
+        Vector2 GetDragAcceleration(Vector2 pos, Vector2 vel)
+        {
+            float atmoDensity = (float)planet.GetAtmosphericDensity(pos.magnitude - planet.Radius);
+            return dragCoefficient * vel.sqrMagnitude * atmoDensity * -vel.normalized;
+        }
+
+        Vector2 GetGlidingHeatshieldsAcceleration(Vector2 pos, Vector2 vel)
+        {
+            if (glidingHeatshields_dragCoefficient is float coefficient)
+            {
+                return coefficient * (float)planet.GetAtmosphericDensity(pos.magnitude - planet.Radius) * (float)vel.sqrMagnitude * (-vel.normalized).Rotate_90();
+            }
+            else
+            {
+                return Vector2.zero;
+            }
+        }
+
+        Vector2 GetGravitationalAcceleration(Vector2 pos)
+        {
+            return (Vector2)planet.GetGravity((Double2)pos);
+        }
+
+        void UpdateHeating(float dt)
+        {
+            Location location = new Location(planet, (Double2)currentPos, (Double2)currentVel);
+            AeroModule.GetTemperatureAndShockwave(location, out _, out _, out float tempBase);
+
+            float num3 = tempBase - currentTemp;
+            if (num3 > 0f)
+            {
+                float num1 = 0.02f * dt;
+                float num5 = ((num3 < 1000f) ? num3 : (num3 * num3 / 1000f));
+                currentTemp += heatingConst_num4 * num5 * num1;
+            }
+            else if (currentTemp > 0f)
+            {
+                float num1 = 0.01f * WorldTime.FixedDeltaTime;
+                float num2 = 10f * WorldTime.FixedDeltaTime;
+                currentTemp -= num2 + currentTemp * num1;
+
+                if (currentTemp < 0f)
+                    currentTemp = 0f;
+            }
+        }
+        
+        // 在单独线程中运行完整的仿真
+        public async Task<List<Vector2>> RunSimulationAsync(CancellationToken cancellationToken = default)
+        {
+            return await Task.Run(() =>
+            {
+                var trajectory = new List<Vector2>();
+                
+                while (currentStep < maxSteps && !cancellationToken.IsCancellationRequested)
+                {
+                    Vector2? nextPos = Step(out Color trajectoryColor);
+                    if (nextPos.HasValue)
+                    {
+                        trajectory.Add(nextPos.Value);
+                    }
+                    else
+                    {
+                        break; // 仿真结束
+                    }
+                }
+                
+                return trajectory;
+            }, cancellationToken);
+        }
+    }
+
     public static class Info
     {
         // 获取当前火箭的详细信息
@@ -533,6 +731,45 @@ namespace SFSControl
                 }
             } catch { inertiaInfo = null; }
 
+            // 计算火箭当前受到的重力
+            Dictionary<string, object> gravityInfo = null;
+            try {
+                if (rocket?.location?.Value != null)
+                {
+                    var location = rocket.location.Value;
+                    var planet = location.planet;
+                    if (planet != null)
+                    {
+                        var gravityVector = planet.GetGravity(location.position);
+                        gravityInfo = new Dictionary<string, object>
+                        {
+                            { "gravityX", gravityVector.x },
+                            { "gravityY", gravityVector.y },
+                            { "gravityMagnitude", gravityVector.magnitude }
+                        };
+                    }
+                }
+            } catch (Exception ex) { 
+                Debug.Log($"[SFSControl] Gravity calculation error: {ex.Message}");
+                gravityInfo = null; 
+            }
+
+            // 计算火箭落点（如果火箭存在）
+            Dictionary<string, object> landingPoint = null;
+            try {
+                if (rocket != null)
+                {
+                    landingPoint = CalculateLandingPoint(rocketIdOrName, 0f);
+                }
+                else
+                {
+                    Debug.Log("[SFSControl] No rocket found for landing point calculation");
+                }
+            } catch (Exception ex) { 
+                Debug.Log($"[SFSControl] Landing point calculation error: {ex.Message}");
+                landingPoint = null; 
+            }
+
             return new Dictionary<string, object>
             {
                 { "targetAngle", targetAngle },
@@ -552,7 +789,9 @@ namespace SFSControl
                 { "distToPeriapsis", distToPeriapsis },
                 { "timeToApoapsis", timeToApoapsis },
                 { "timeToPeriapsis", timeToPeriapsis },
-                { "inertia", inertiaInfo }
+                { "inertia", inertiaInfo },
+                { "gravity", gravityInfo },
+                { "landingPoint", landingPoint }
             };
         }
 
@@ -733,6 +972,92 @@ namespace SFSControl
             if (queue == null)
                 return new List<string> { "No console log available" };
             return queue.Reverse().Take(maxLines).Reverse().ToList();
+        }
+
+        // 计算火箭的落点坐标
+        public static Dictionary<string, object> CalculateLandingPoint(string rocketIdOrName = null, float angle = 0f)
+        {
+            try
+            {
+                Rocket rocket = null;
+                if (!string.IsNullOrEmpty(rocketIdOrName))
+                {
+                    if (int.TryParse(rocketIdOrName, out int idx))
+                    {
+                        if (GameManager.main?.rockets != null && idx >= 0 && idx < GameManager.main.rockets.Count)
+                            rocket = GameManager.main.rockets[idx];
+                    }
+                    else if (GameManager.main?.rockets != null)
+                    {
+                        rocket = GameManager.main.rockets.FirstOrDefault(r => r != null && r.rocketName != null && r.rocketName.Equals(rocketIdOrName, StringComparison.OrdinalIgnoreCase));
+                    }
+                }
+                if (rocket == null && PlayerController.main?.player?.Value is Rocket curRocket)
+                    rocket = curRocket;
+
+                if (rocket == null)
+                    return new Dictionary<string, object> { { "error", "Rocket not found" } };
+
+                var location = rocket.location?.Value;
+                if (location == null)
+                    return new Dictionary<string, object> { { "error", "Rocket location not available" } };
+
+                var planet = location.planet;
+                if (planet == null)
+                    return new Dictionary<string, object> { { "error", "Planet not available" } };
+
+                // 创建轨迹仿真
+                var simulation = new TrajectorySimulation(rocket, location, angle);
+                
+                // 执行仿真直到撞击地面
+                Vector2? lastPosition = null;
+                int maxSteps = 10000; // 最大步数限制
+                int stepCount = 0;
+                
+                while (stepCount < maxSteps)
+                {
+                    var result = simulation.Step(out Color trajectoryColor);
+                    if (result == null) // 撞击地面或逃逸大气层
+                    {
+                        if (lastPosition != null)
+                        {
+                            // 计算落点的坐标和角度
+                            Vector2 landingPos = lastPosition.Value;
+                            double angle_rad = Math.Atan2(landingPos.y, landingPos.x);
+                            double angle_degrees = angle_rad * 180.0 / Math.PI;
+                            
+                            return new Dictionary<string, object>
+                            {
+                                { "success", true },
+                                { "landingPoint", new {
+                                    x = landingPos.x,
+                                    y = landingPos.y,
+                                    angle = angle_degrees,
+                                    radius = landingPos.magnitude,
+                                    height = landingPos.magnitude - planet.Radius
+                                }},
+                                { "planet", planet.codeName },
+                                { "steps", stepCount }
+                            };
+                        }
+                        break;
+                    }
+                    lastPosition = result.Value;
+                    stepCount++;
+                    
+                    // 对于无大气层星球，如果轨迹开始远离星球，说明不会撞击
+                    if (!planet.HasAtmospherePhysics && lastPosition.Value.magnitude > location.position.magnitude * 2.0)
+                    {
+                        return new Dictionary<string, object> { { "error", "Trajectory will not impact planet surface" } };
+                    }
+                }
+
+                return new Dictionary<string, object> { { "error", "Simulation did not converge within maximum steps" } };
+            }
+            catch (Exception ex)
+            {
+                return new Dictionary<string, object> { { "error", $"Simulation failed: {ex.Message}" } };
+            }
         }
 
         // 获取SFS窗口的截图

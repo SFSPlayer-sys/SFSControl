@@ -10,6 +10,10 @@ namespace SFSControl
     {
         public int port = 27772; // 端口
         public bool allowScreenshot = false; // 是否允许截屏
+        
+        // 模拟再入设置
+        public float simulationStepSize = 0.1f; // 仿真步长
+        public int simulationMaxSteps = 50000; // 最大仿真步数
     }
 
     public static class SettingsManager
@@ -34,7 +38,7 @@ namespace SFSControl
             Path.WriteText(JsonWrapper.ToJson(settings, true));
         }
 
-        // 获取Mod文件夹路径（保留原有方法以兼容）
+        // 获取Mod文件夹路径
         private static string GetSettingsPath()
         {
             string folder = "Mods/SFSControl";
