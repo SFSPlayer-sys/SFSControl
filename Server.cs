@@ -109,6 +109,12 @@ namespace SFSControl
         {
             if (isRunning) return;
 
+            // 确保设置已加载
+            if (SettingsManager.settings == null)
+            {
+                SettingsManager.Load();
+            }
+
             listener = new HttpListener();
             listener.Prefixes.Add($"http://127.0.0.1:{port}/");
             
@@ -119,6 +125,10 @@ namespace SFSControl
                     listener.Start();
                     isRunning = true;
                     Debug.Log($"[Server] Started listening on port {port}");
+                    if (SettingsManager.settings.enableCORS)
+                    {
+                        Debug.Log($"[Server] CORS enabled - Origins: {SettingsManager.settings.allowedOrigins}");
+                    }
 
                     while (isRunning)
                     {
@@ -176,6 +186,41 @@ namespace SFSControl
             }
         }
 
+        private void SetCORSHeaders(HttpListenerContext context)
+        {
+            if (SettingsManager.settings == null)
+            {
+                SettingsManager.Load();
+            }
+
+            if (!SettingsManager.settings.enableCORS)
+                return;
+
+            var response = context.Response;
+            var request = context.Request;
+
+            // 设置Access-Control-Allow-Origin
+            string origin = request.Headers["Origin"];
+            if (string.IsNullOrEmpty(origin))
+            {
+                response.Headers.Add("Access-Control-Allow-Origin", "*");
+            }
+            else
+            {
+                string allowedOrigins = SettingsManager.settings.allowedOrigins;
+                if (allowedOrigins == "*" || allowedOrigins.Split(',').Any(o => o.Trim().Equals(origin, StringComparison.OrdinalIgnoreCase)))
+                {
+                    response.Headers.Add("Access-Control-Allow-Origin", origin);
+                }
+            }
+
+            // 设置其他CORS头
+            response.Headers.Add("Access-Control-Allow-Methods", SettingsManager.settings.allowedMethods);
+            response.Headers.Add("Access-Control-Allow-Headers", SettingsManager.settings.allowedHeaders);
+            response.Headers.Add("Access-Control-Allow-Credentials", "true");
+            response.Headers.Add("Access-Control-Max-Age", "86400"); // 24小时
+        }
+
         private void HandleRequestOnMainThread(HttpListenerContext context)
         {
             //Debug.Log("[Server] Handling HTTP request: " + context.Request.Url.AbsolutePath);
@@ -183,6 +228,18 @@ namespace SFSControl
             var response = context.Response;
             string responseString = "";
             int statusCode = 200;
+
+            // 设置CORS头
+            SetCORSHeaders(context);
+
+            // 处理OPTIONS预检请求
+            if (request.HttpMethod == "OPTIONS")
+            {
+                response.StatusCode = 200;
+                response.ContentLength64 = 0;
+                response.OutputStream.Close();
+                return;
+            }
 
             try
             {
@@ -294,6 +351,54 @@ namespace SFSControl
                         break;
                     case "/version":
                         responseString = JsonConvert.SerializeObject(new { name = "SFSControl", version = Main.VERSION });
+                        break;
+                    case "/cors_settings":
+                        if (request.HttpMethod == "GET")
+                        {
+                            // 获取CORS设置
+                            var corsSettings = new
+                            {
+                                enableCORS = SettingsManager.settings.enableCORS,
+                                allowedOrigins = SettingsManager.settings.allowedOrigins,
+                                allowedMethods = SettingsManager.settings.allowedMethods,
+                                allowedHeaders = SettingsManager.settings.allowedHeaders
+                            };
+                            responseString = JsonConvert.SerializeObject(corsSettings);
+                        }
+                        else if (request.HttpMethod == "POST")
+                        {
+                            // 更新CORS设置
+                            try
+                            {
+                                string corsBody;
+                                using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                                    corsBody = reader.ReadToEnd();
+                                
+                                var corsUpdate = JsonConvert.DeserializeObject<Dictionary<string, object>>(corsBody);
+                                
+                                if (corsUpdate.ContainsKey("enableCORS"))
+                                    SettingsManager.settings.enableCORS = Convert.ToBoolean(corsUpdate["enableCORS"]);
+                                if (corsUpdate.ContainsKey("allowedOrigins"))
+                                    SettingsManager.settings.allowedOrigins = corsUpdate["allowedOrigins"]?.ToString() ?? "*";
+                                if (corsUpdate.ContainsKey("allowedMethods"))
+                                    SettingsManager.settings.allowedMethods = corsUpdate["allowedMethods"]?.ToString() ?? "GET,POST,PUT,DELETE,OPTIONS";
+                                if (corsUpdate.ContainsKey("allowedHeaders"))
+                                    SettingsManager.settings.allowedHeaders = corsUpdate["allowedHeaders"]?.ToString() ?? "Content-Type,Authorization,X-Requested-With";
+                                
+                                SettingsManager.Save();
+                                responseString = JsonConvert.SerializeObject(new { result = "CORS settings updated successfully" });
+                            }
+                            catch (Exception ex)
+                            {
+                                statusCode = 400;
+                                responseString = JsonConvert.SerializeObject(new { error = $"Failed to update CORS settings: {ex.Message}" });
+                            }
+                        }
+                        else
+                        {
+                            statusCode = 405;
+                            responseString = JsonConvert.SerializeObject(new { error = "Method not allowed" });
+                        }
                         break;
                     case "/screenshot":
                         // 检查设置是否已加载

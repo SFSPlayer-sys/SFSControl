@@ -783,9 +783,17 @@ namespace SFSControl
             if (vx.HasValue && vy.HasValue)
                 velocity = new Double2(vx.Value, vy.Value);
             var newLoc = new Location(0, planet, position, velocity);
-            rocket.physics.SetLocationAndState(newLoc, false);
+            // 根据realtimePhysics状态决定是否使用物理模式，确保速度设置正确
+            bool shouldUsePhysicsMode = WorldTime.main.realtimePhysics.Value && rocket.physics.loader.Loaded;
+            rocket.physics.SetLocationAndState(newLoc, shouldUsePhysicsMode);
             if (angularVelocity.HasValue)
                 rocket.rb2d.angularVelocity = (float)angularVelocity.Value;
+            // 如果使用物理模式，确保速度正确设置（避免velocityOffset导致的速度错误）
+            if (shouldUsePhysicsMode && rocket.rb2d != null && (vx.HasValue || vy.HasValue))
+            {
+                Vector2 localVelocity = WorldView.ToLocalVelocity(velocity);
+                rocket.rb2d.velocity = localVelocity;
+            }
             return "Success";
         }
 
@@ -1833,46 +1841,53 @@ namespace SFSControl
                     Debug.LogWarning("[Control] CreateRocket: Some parts are not owned, using placeholders");
                 }
 
-                // 将部件摆放到合理位置（基于世界坐标转本地坐标），以便后续生成关节
-                try
-                {
-                    Vector2 localSpawn = WorldView.ToLocalPosition(new Double2(x, y));
-                    Part_Utility.PositionParts(localSpawn, new Vector2(0.5f, 0f), true, true, validParts);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Control] CreateRocket: PositionParts failed, continuing: {ex.Message}");
-                }
+                // 完全照抄 SpawnBlueprint 流程
+                Vector2 localSpawnPos = WorldView.ToLocalPosition(new Double2(x, y));
+                Part_Utility.PositionParts(localSpawnPos, new Vector2(0.5f, 0f), true, true, validParts);
 
-                // 通过反射调用 RocketManager.GenerateJoints 生成正确的关节连接
-                List<PartJoint> generatedJoints = new List<PartJoint>();
-                try
+                List<JointGroup> groups;
+                new JointGroup(RocketManager.GenerateJoints(validParts), validParts.ToList()).RecreateGroups(out groups);
+
+                if (groups == null || groups.Count == 0)
                 {
-                    var rmType = typeof(RocketManager);
-                    var genMethod = rmType.GetMethod("GenerateJoints", BindingFlags.NonPublic | BindingFlags.Static);
-                    if (genMethod != null)
-                    {
-                        var jointsObj = genMethod.Invoke(null, new object[] { validParts });
-                        if (jointsObj is List<PartJoint> list)
-                            generatedJoints = list;
-                    }
-                    else
-                    {
-                        Debug.LogWarning("[Control] CreateRocket: GenerateJoints not found via reflection, joints may be missing");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Control] CreateRocket: GenerateJoints reflection failed: {ex.Message}");
+                    Debug.LogError("[Control] CreateRocket: Failed to create joint groups");
+                    return "Error: Failed to create joint groups";
                 }
 
-                // 创建关节组（包含生成的关节与部件）
-                var jointGroup = new JointGroup(generatedJoints, validParts.ToList());
+                // 计算基于重心的位置（类似 GetSpawnLocation）
+                Vector2 centerOfMassLocal = Vector2.zero;
+                float totalMass = 0f;
+                foreach (Part part in groups[0].parts)
+                {
+                    Vector2 partCenterOfMass = part.transform.TransformPoint(part.centerOfMass.Value);
+                    float partMass = part.mass.Value;
+                    centerOfMassLocal += partCenterOfMass * partMass;
+                    totalMass += partMass;
+                }
+                if (totalMass > 0f)
+                {
+                    centerOfMassLocal /= totalMass;
+                }
+                else if (groups[0].parts.Count > 0)
+                {
+                    centerOfMassLocal = groups[0].parts[0].transform.position;
+                }
 
-                // 创建位置对象
-                Location location = new Location(planet, new Double2(x, y), new Double2(vx, vy));
+                // 计算偏移量，使重心移动到目标位置
+                Vector2 targetLocalPos = WorldView.ToLocalPosition(new Double2(x, y));
+                Vector2 offset = targetLocalPos - centerOfMassLocal;
+                
+                // 移动所有部件（在创建火箭之前）
+                foreach (Part part in groups[0].parts)
+                {
+                    part.transform.localPosition += (Vector3)offset;
+                }
 
-                // 创建火箭 - 使用反射访问私有方法
+                // 计算最终位置（基于调整后的重心）
+                Double2 finalGlobalPos = WorldView.ToGlobalPosition(targetLocalPos);
+                Location location = new Location(planet, finalGlobalPos, new Double2(vx, vy));
+
+                // 完全照抄 SpawnRockets 的流程创建火箭
                 var createRocketMethod = typeof(RocketManager).GetMethod("CreateRocket", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
                 if (createRocketMethod == null)
                 {
@@ -1880,9 +1895,12 @@ namespace SFSControl
                     return "Error: CreateRocket method not found";
                 }
                 
-                // 创建委托对象
+                // 创建location委托（完全照抄 SpawnRockets）
                 var locationDelegate = new Func<Rocket, Location>((Rocket r) => location);
-                Rocket rocket = (Rocket)createRocketMethod.Invoke(null, new object[] { jointGroup, "", false, 0.5f, false, 0f, (float)vr, locationDelegate, false });
+                
+                // 完全照抄 SpawnRockets 的 CreateRocket 调用
+                // physicsMode=false，让系统自动管理物理状态切换
+                Rocket rocket = (Rocket)createRocketMethod.Invoke(null, new object[] { groups[0], "", false, 0.5f, false, 0f, (float)vr, locationDelegate, false });
                 
                 if (rocket == null)
                 {
@@ -1890,43 +1908,45 @@ namespace SFSControl
                     return "Error: Failed to create rocket";
                 }
 
-                // 设置火箭名称
+                // 设置火箭名称（如果提供了）
                 if (!string.IsNullOrEmpty(rocketName))
                 {
                     rocket.rocketName = rocketName;
                 }
-                else
-                {
-                    rocket.rocketName = ""; 
-                }
 
-                // 加载分级信息
+                // 创建分级（完全照抄 SpawnBlueprint，在 CreateRocket 之后调用）
                 if (blueprint.stages != null && blueprint.stages.Length > 0)
                 {
-                    rocket.staging.Load(blueprint.stages, rocket.partHolder.GetArray(), false);
+                    try
+                    {
+                        Staging.CreateStages(blueprint.stages, parts);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogError($"[Control] CreateRocket: Error creating stages: {ex.Message}");
+                        // 不抛出异常，继续执行
+                    }
                 }
 
-                // 设置火箭的物理状态
-                rocket.physics.SetLocationAndState(location, false);
-                rocket.rb2d.angularVelocity = (float)vr;
-
-                // 初始化火箭的统计信息和任务日志系统
+                // 初始化统计信息（完全照抄 SpawnRockets：rocket.stats.Load(-1)）
+                // 但我们创建一个新分支，而不是使用-1（保存相关）
                 if (rocket.stats != null)
                 {
                     try
                     {
-                        // 为火箭创建新的日志分支
                         int newBranch;
                         SFS.Stats.LogManager.main.CreateRoot(out newBranch);
-                        
-                        // 初始化统计记录器
                         rocket.stats.Load(newBranch);
-                        
-                        Debug.Log($"[Control] CreateRocket: Initialized rocket stats with branch {newBranch}");
                     }
                     catch (System.Exception ex)
                     {
                         Debug.LogWarning($"[Control] CreateRocket: Failed to initialize rocket stats: {ex.Message}");
+                        // 如果失败，使用-1（和SpawnRockets一样）
+                        try
+                        {
+                            rocket.stats.Load(-1);
+                        }
+                        catch { }
                     }
                 }
 

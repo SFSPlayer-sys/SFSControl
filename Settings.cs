@@ -11,9 +11,16 @@ namespace SFSControl
         public int port = 27772; // 端口
         public bool allowScreenshot = false; // 是否允许截屏
         
-        // 模拟再入设置
-        public float simulationStepSize = 0.1f; // 仿真步长
-        public int simulationMaxSteps = 50000; // 最大仿真步数
+        // CORS设置
+        public bool enableCORS = false; // 是否启用CORS
+        public string allowedOrigins = "*"; // 允许的源，用逗号分隔，*表示所有源
+        public string allowedMethods = "GET,POST,PUT,DELETE,OPTIONS"; // 允许的HTTP方法
+        public string allowedHeaders = "Content-Type,Authorization,X-Requested-With"; // 允许的请求头
+
+        public float simulationStepSize = 0.05f;
+        public int simulationMaxSteps = 25000;
+        public bool enableHeatingSimulation = true;
+        public bool enableGlidingHeatshields = true; 
     }
 
     public static class SettingsManager
