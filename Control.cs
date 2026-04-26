@@ -1602,7 +1602,7 @@ namespace SFSControl
                         
                         // 检查快速保存是否存在
                         var loadPath = Base.worldBase.paths.GetQuicksavePath(name);
-                        if (loadPath == null || !loadPath.FolderExists())
+                        if (loadPath == null || !System.IO.Directory.Exists(loadPath.Path))
                             return $"Error: Quicksave '{name}' not found";
                         
                         // 加载快速保存
@@ -1630,16 +1630,15 @@ namespace SFSControl
                     case "delete":
                         if (string.IsNullOrEmpty(name))
                             return "Error: Delete name cannot be empty";
-                        
-                        // 检查快速保存是否存在
+    
                         var deletePath = Base.worldBase.paths.GetQuicksavePath(name);
-                        if (deletePath == null || !deletePath.FolderExists())
+                        if (deletePath == null || !System.IO.Directory.Exists(deletePath.Path))
                             return $"Error: Quicksave '{name}' not found";
                         
                         try
                         {
                             // 删除快速保存文件夹
-                            deletePath.DeleteFolder();
+                            System.IO.Directory.Delete(deletePath.Path, true);
                             return "Success";
                         }
                         catch (System.Exception ex)
@@ -1664,18 +1663,18 @@ namespace SFSControl
                         
                         // 检查源快速保存是否存在
                         var oldPath = Base.worldBase.paths.GetQuicksavePath(oldName);
-                        if (oldPath == null || !oldPath.FolderExists())
+                        if (oldPath == null || !System.IO.Directory.Exists(oldPath.Path))
                             return $"Error: Source quicksave '{oldName}' not found";
                         
                         // 检查目标名称是否已存在
                         var newPath = Base.worldBase.paths.GetQuicksavePath(newName);
-                        if (newPath != null && newPath.FolderExists())
+                        if (newPath != null && System.IO.Directory.Exists(newPath.Path))
                             return $"Error: Target quicksave '{newName}' already exists";
                         
                         try
                         {
                             // 重命名文件夹
-                            oldPath.Move(newPath);
+                            System.IO.Directory.Move(oldPath.Path, newPath.Path);
                             return "Success";
                         }
                         catch (System.Exception ex)
@@ -2114,9 +2113,6 @@ namespace SFSControl
 
                     case "explosion":
                     case "explosionparticle":
-                        // 直接执行真正的零件爆炸，不创建临时对象
-                        // 输入：火箭的SFS坐标 (x, y)
-                        // 需要转换为Unity世界坐标
                         Vector3 explosionPosition = new Vector3((float)x, (float)y, 0f);
                         Vector3 explosionGlobalPosition = planet.transform.position + explosionPosition; // 星球位置 + 火箭相对坐标 = Unity世界坐标
                         
@@ -2155,7 +2151,6 @@ namespace SFSControl
                             explosionResult = "Visual effect only - no damage";
                         }
                         
-                        // 创建一个简单的标记对象来表示爆炸已发生
                         createdObject = new GameObject(string.IsNullOrEmpty(objectName) ? "ExplosionMarker" : objectName);
                         createdObject.transform.position = explosionGlobalPosition;
                         
@@ -2173,7 +2168,6 @@ namespace SFSControl
                     return "Error: Failed to create object";
                 }
 
-                // 设置对象位置
                 Vector2 objectPlanetPosition = new Vector2((float)x, (float)y);
                 Vector3 objectGlobalPosition = planet.transform.position + new Vector3(objectPlanetPosition.x, objectPlanetPosition.y, 0f);
                 createdObject.transform.position = objectGlobalPosition;
@@ -2183,14 +2177,11 @@ namespace SFSControl
                 {
                     createdObject.name = objectName;
                 }
-
-                // 设置隐藏状态
                 if (hidden)
                 {
                     createdObject.SetActive(false);
                 }
 
-                // 将对象设置为星球的子对象
                 if (planet.transform != null)
                 {
                     createdObject.transform.SetParent(planet.transform);
@@ -2216,12 +2207,10 @@ namespace SFSControl
                     return "No rockets available";
                 }
 
-                // 计算爆炸影响范围（基于爆炸大小）
                 float explosionRadius = explosionSize * 5f; // 爆炸大小 * 5 = 影响半径
                 
 
 
-                // 遍历所有火箭，检查是否有零件在爆炸范围内
                 var rocketsToProcess = new List<SFS.World.Rocket>(GameManager.main.rockets);
                 
                 int rocketsAffected = 0;
@@ -2232,14 +2221,11 @@ namespace SFSControl
                 {
                     if (rocket == null || rocket.partHolder?.parts == null) continue;
 
-                    // 检查火箭是否在爆炸范围内
                     float distanceToExplosion = Vector3.Distance(rocket.transform.position, explosionPosition);
                     
                     if (distanceToExplosion <= explosionRadius)
                     {
 
-                        
-                        // 处理火箭的零件爆炸
                         var result = ProcessRocketExplosion(rocket, explosionPosition, explosionRadius, distanceToExplosion);
                         rocketsAffected++;
                         partsDestroyed += result.partsDestroyed;
@@ -2322,23 +2308,23 @@ namespace SFSControl
                 {
                     try
                     {
-                        // 尝试断开零件的连接
+
                         var connectedJoints = rocket.jointsGroup.GetConnectedJoints(part);
                         
                         if (connectedJoints.Count > 0)
                         {
-                            // 断开第一个连接
+
                             bool split;
                             SFS.World.Rocket newRocket;
                             SFS.World.JointGroup.DestroyJoint(connectedJoints[0], rocket, out split, out newRocket);
                             
                             if (split && newRocket != null)
                             {
-                                // 启用碰撞免疫，防止立即碰撞
+
                                 rocket.EnableCollisionImmunity(1.5f);
                                 newRocket.EnableCollisionImmunity(1.5f);
                                 
-                                // 如果原火箭是玩家控制的，设置新的控制目标
+
                                 if (rocket.isPlayer)
                                 {
                                     SFS.World.Rocket.SetPlayerToBestControllable(new SFS.World.Rocket[] { rocket, newRocket });
@@ -2354,7 +2340,7 @@ namespace SFSControl
                     }
                 }
 
-                // 如果火箭没有零件了，摧毁火箭
+
                 if (rocket.partHolder.parts.Count == 0)
                 {
 
@@ -2376,16 +2362,16 @@ namespace SFSControl
             // 基础破坏概率：距离越近，概率越高
             float baseProbability = 1f - (distance / explosionRadius);
             
-            // 质量因子：质量越大的零件越难被摧毁
-            float massFactor = Mathf.Clamp01(1f - (partMass / 10f)); // 假设10是最大质量
+
+
             
-            // 随机因子：增加一些随机性
-            float randomFactor = UnityEngine.Random.Range(0.8f, 1.2f);
+
+
             
-            // 最终概率
-            float finalProbability = baseProbability * massFactor * randomFactor;
+
+            float finalProbability = baseProbability;
             
-            // 确保概率在合理范围内
+
             return Mathf.Clamp01(finalProbability);
         }
 
@@ -2407,7 +2393,7 @@ namespace SFSControl
                     return "Error: Map icon not available";
                 }
 
-                // 获取地图图标的SpriteRenderer组件
+
                 var spriteRenderer = rocket.mapIcon.mapIcon.GetComponentInChildren<SpriteRenderer>();
                 if (spriteRenderer == null)
                 {
@@ -2425,7 +2411,7 @@ namespace SFSControl
 
                 if (rgbaValue.StartsWith("#"))
                 {
-                    // 十六进制格式：#RRGGBB 或 #RRGGBBAA
+
                     if (!ColorUtility.TryParseHtmlString(rgbaValue, out newColor))
                     {
                         Debug.LogError($"[Control] SetMapIconColor: Invalid hex color format: {rgbaValue}");
@@ -2434,7 +2420,7 @@ namespace SFSControl
                 }
                 else if (rgbaValue.Contains(","))
                 {
-                    // 逗号分隔格式：R,G,B,A 或 R,G,B
+
                     var parts = rgbaValue.Split(',');
                     if (parts.Length < 3 || parts.Length > 4)
                     {
@@ -2449,13 +2435,13 @@ namespace SFSControl
                         return $"Error: Invalid number format in RGBA values: {rgbaValue}";
                     }
 
-                    float a = 1.0f; // 默认透明度
+                    float a = 1.0f; 
                     if (parts.Length == 4 && float.TryParse(parts[3], out float alpha))
                     {
                         a = alpha;
                     }
 
-                    // 限制值在0-1范围内
+
                     newColor = new Color(Mathf.Clamp01(r), Mathf.Clamp01(g), Mathf.Clamp01(b), Mathf.Clamp01(a));
                 }
                 else
@@ -2464,17 +2450,16 @@ namespace SFSControl
                     return $"Error: Unsupported RGBA format: {rgbaValue}. Use hex (#RRGGBB) or comma-separated (R,G,B,A) format";
                 }
 
-                // 应用新颜色
+
                 spriteRenderer.color = newColor;
 
-                // 保存用户设置的颜色到补丁系统中，防止缩放时被重置为白色
                 var patchType = Type.GetType("SFSControl.Patch_MapIcon_UpdateAlpha, SFSControl");
                 if (patchType != null)
                 {
                     var setUserColorMethod = patchType.GetMethod("SetUserColor", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
                     if (setUserColorMethod != null)
                     {
-                        // 保存完整的RGBA值，包括透明度
+
                         setUserColorMethod.Invoke(null, new object[] { spriteRenderer, newColor, true });
                     }
                 }

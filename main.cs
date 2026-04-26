@@ -13,11 +13,11 @@ namespace SFSControl
 
     public class Main : ModLoader.Mod
     {
-        public const string VERSION = "1.3.1";
+        public const string VERSION = "1.4.0";
         public override string ModNameID => "SFSControl";
         public override string DisplayName => "SFSControl";
         public override string Author => "SFSGamer"; 
-        public override string MinimumGameVersionNecessary => "1.5.10.2";
+        public override string MinimumGameVersionNecessary => "1.6.0.0";
         public override string ModVersion => VERSION;
         public override string Description => "Add APIs that can be accessed by external programs for SFS.";
 

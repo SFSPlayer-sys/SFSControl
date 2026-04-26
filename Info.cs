@@ -402,10 +402,9 @@ namespace SFSControl
                             {
                                 { "name", landmark.data.name },
                                 { "displayName", landmark.displayName?.ToString() },
-                                { "angle", landmark.data.angle },
+                                { "center", landmark.data.Center },
                                 { "startAngle", landmark.data.startAngle },
                                 { "endAngle", landmark.data.endAngle },
-                                { "center", landmark.data.Center },
                                 { "angularWidth", landmark.data.AngularWidth }
                             });
                         }
@@ -453,7 +452,70 @@ namespace SFSControl
                     };
                 }
             } catch { orbitInfo = null; }
-            
+
+            Dictionary<string, object> waterInfo = null;
+            try {
+                if (planet.data?.hasWater == true && planet.data.water != null)
+                {
+                    var water = planet.data.water;
+                    waterInfo = new Dictionary<string, object>
+                    {
+                        { "hasWater", true },
+                        { "oceanDepth", water.oceanDepth },
+                        { "waterGradientWidthMultiplier", water.waterGradientWidthMultiplier },
+                        { "sandGradientWidthMultiplier", water.sandGradientWidthMultiplier },
+                        { "floorGradientWidthMultiplier", water.floorGradientWidthMultiplier },
+                        { "shoreNoiseSize", new { x = water.shoreNoiseSize.x, y = water.shoreNoiseSize.y } },
+                        { "sandNoiseSize", new { x = water.sandNoiseSize.x, y = water.sandNoiseSize.y } }
+                    };
+                }
+                else
+                {
+                    waterInfo = new Dictionary<string, object> { { "hasWater", false } };
+                }
+            } catch { waterInfo = new Dictionary<string, object> { { "hasWater", false } }; }
+
+            Dictionary<string, object> ringsInfo = null;
+            try {
+                if (planet.data?.hasRings == true && planet.data.rings != null)
+                {
+                    var rings = planet.data.rings;
+                    ringsInfo = new Dictionary<string, object>
+                    {
+                        { "hasRings", true },
+                        { "startRadius", rings.startRadius },
+                        { "endRadius", rings.endRadius },
+                        { "positionZ", rings.positionZ },
+                        { "mapColor", new { r = rings.mapColor.r, g = rings.mapColor.g, b = rings.mapColor.b, a = rings.mapColor.a } }
+                    };
+                }
+                else
+                {
+                    ringsInfo = new Dictionary<string, object> { { "hasRings", false } };
+                }
+            } catch { ringsInfo = new Dictionary<string, object> { { "hasRings", false } }; }
+
+            Dictionary<string, object> frontCloudsInfo = null;
+            try {
+                if (planet.data?.hasFrontClouds == true && planet.data.frontClouds != null)
+                {
+                    var clouds = planet.data.frontClouds;
+                    frontCloudsInfo = new Dictionary<string, object>
+                    {
+                        { "hasFrontClouds", true },
+                        { "cloudTextureCutout", clouds.cloudTextureCutout },
+                        { "fadeZoneHeight", clouds.fadeZoneHeight },
+                        { "height", clouds.height },
+                        { "positionZ", clouds.positionZ },
+                        { "sharpenAlpha", clouds.sharpenAlpha }
+                    };
+                }
+                else
+                {
+                    frontCloudsInfo = new Dictionary<string, object> { { "hasFrontClouds", false } };
+                }
+            } catch { frontCloudsInfo = new Dictionary<string, object> { { "hasFrontClouds", false } }; }
+
             return new Dictionary<string, object>
             {
                 { "codeName", planet.codeName },
@@ -464,11 +526,21 @@ namespace SFSControl
                 { "SOI", planet.SOI },
                 { "hasAtmosphere", planet.HasAtmospherePhysics },
                 { "atmosphereHeight", planet.HasAtmospherePhysics ? planet.AtmosphereHeightPhysics : 0 },
+                { "hasAtmosphereVisuals", planet.HasAtmosphereVisuals },
+                { "hasFrontClouds", planet.HasFrontClouds },
+                { "hasTerrain", planet.data?.hasTerrain ?? false },
+                { "hasWater", planet.data?.hasWater ?? false },
+                { "hasRings", planet.HasRings },
+                { "hasPostProcessing", planet.data?.hasPostProcessing ?? false },
+                { "hasOrbit", planet.data?.hasOrbit ?? false },
                 { "parent", planet.parentBody?.codeName },
                 { "satellites", planet.satellites?.Where(s => s != null).Select(s => s.codeName).ToArray() },
                 { "landmarks", landmarks },
                 { "mapColor", mapColor },
-                { "orbit", orbitInfo }
+                { "orbit", orbitInfo },
+                { "water", waterInfo },
+                { "rings", ringsInfo },
+                { "frontClouds", frontCloudsInfo }
             };
         }
 
@@ -948,10 +1020,21 @@ namespace SFSControl
         }
 
         // 获取星球指定经度范围的地形高度数组
-        public static double[] GetTerrainProfile(string planetCode, double startDegree, double endDegree, int sampleCount = 360)
+        public static double[] GetTerrainProfile(string planetCode, double startDegree, double endDegree, int sampleCount = 360, bool clampToWater = true)
         {
-            var planet = SFS.Base.planetLoader.planets.Values.FirstOrDefault(
-                p => p.codeName.Equals(planetCode, StringComparison.OrdinalIgnoreCase));
+            Planet planet = null;
+            if (!string.IsNullOrEmpty(planetCode))
+            {
+                planet = Base.planetLoader.planets.Values.FirstOrDefault(
+                    p => p.codeName.Equals(planetCode, StringComparison.OrdinalIgnoreCase));
+            }
+            if (planet == null)
+            {
+                if (PlayerController.main?.player?.Value != null)
+                    planet = PlayerController.main.player.Value.location?.Value?.planet;
+                else if (WorldView.main?.ViewLocation != null)
+                    planet = WorldView.main.ViewLocation.planet;
+            }
             if (planet == null) return null;
             
             if (sampleCount <= 0)
@@ -966,7 +1049,7 @@ namespace SFSControl
             for (int i = 0; i < sampleCount; i++)
             {
                 double angle = startRad + delta * i;
-                heights[i] = planet.GetTerrainHeightAtAngle(angle);
+                heights[i] = planet.GetTerrainHeightAtAngle(angle, clampToWater);
             }
             return heights;
         }

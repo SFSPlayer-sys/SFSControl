@@ -806,7 +806,10 @@ namespace SFSControl
                             double.TryParse(terrainQueryDict["end"], out end);
                         if (terrainQueryDict.ContainsKey("count"))
                             int.TryParse(terrainQueryDict["count"], out count);
-                        var terrainArr = Info.GetTerrainProfile(terrainPlanetCode, start, end, count);
+                        bool clampToWater = true;
+                        if (terrainQueryDict.ContainsKey("clampToWater"))
+                            bool.TryParse(terrainQueryDict["clampToWater"], out clampToWater);
+                        var terrainArr = Info.GetTerrainProfile(terrainPlanetCode, start, end, count, clampToWater);
                         responseString = JsonConvert.SerializeObject(terrainArr);
                         break;
                     default:
